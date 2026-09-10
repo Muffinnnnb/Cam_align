@@ -1,0 +1,18 @@
+{
+  "custom_valid_percent": 82.8271484375,
+  "rs_align_valid_percent": 84.21223958333334,
+  "overlap_percent": 81.76920572916667,
+  "overlap_iou_percent": 95.89425462874594,
+  "common_pixels": 251195,
+  "mae_mm": 10.415382385253906,
+  "rmse_mm": 124.257568359375,
+  "p95_abs_mm": 29.999732971191406,
+  "calibration_source": "measured",
+  "custom_points": 254445,
+  "rs_align_points": 258700,
+  "difference_points": 251195,
+  "difference_color_scale_mm": [
+    0,
+    10
+  ]
+}

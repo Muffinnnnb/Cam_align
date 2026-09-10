@@ -1,0 +1,229 @@
+<?xml version="1.0" standalone="yes"?>
+<CalibrationProject>
+  <xs:schema id="CalibrationProject" xmlns="" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xs:element name="CalibrationProject" msdata:IsDataSet="true" msdata:UseCurrentLocale="true">
+      <xs:complexType>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element name="data">
+            <xs:complexType>
+              <xs:sequence>
+                <xs:element name="ObjWidth" type="xs:int" minOccurs="0" />
+                <xs:element name="ObjHeight" type="xs:int" minOccurs="0" />
+                <xs:element name="FieldSize" type="xs:double" minOccurs="0" />
+                <xs:element name="DetectionMethod" type="xs:int" minOccurs="0" />
+              </xs:sequence>
+            </xs:complexType>
+          </xs:element>
+          <xs:element name="images">
+            <xs:complexType>
+              <xs:sequence>
+                <xs:element name="ImagePath" type="xs:string" minOccurs="0" />
+                <xs:element name="SourceType" type="xs:int" minOccurs="0" />
+              </xs:sequence>
+            </xs:complexType>
+          </xs:element>
+          <xs:element name="results">
+            <xs:complexType>
+              <xs:sequence>
+                <xs:element name="ImageCount" type="xs:int" minOccurs="0" />
+                <xs:element name="focus_lenX" type="xs:double" minOccurs="0" />
+                <xs:element name="focus_lenY" type="xs:double" minOccurs="0" />
+                <xs:element name="PrincipalX" type="xs:double" minOccurs="0" />
+                <xs:element name="PrincipalY" type="xs:double" minOccurs="0" />
+                <xs:element name="Dist1" type="xs:double" minOccurs="0" />
+                <xs:element name="Dist2" type="xs:double" minOccurs="0" />
+                <xs:element name="Dist3" type="xs:double" minOccurs="0" />
+                <xs:element name="Dist4" type="xs:double" minOccurs="0" />
+                <xs:element name="focus_lenX_er" type="xs:double" minOccurs="0" />
+                <xs:element name="focus_lenY_er" type="xs:double" minOccurs="0" />
+                <xs:element name="PrincipalX_er" type="xs:double" minOccurs="0" />
+                <xs:element name="PrincipalY_er" type="xs:double" minOccurs="0" />
+                <xs:element name="Dist1_er" type="xs:double" minOccurs="0" />
+                <xs:element name="Dist2_er" type="xs:double" minOccurs="0" />
+                <xs:element name="Dist3_er" type="xs:double" minOccurs="0" />
+                <xs:element name="Dist4_er" type="xs:double" minOccurs="0" />
+                <xs:element name="dc_AllImage_errX" type="xs:double" minOccurs="0" />
+                <xs:element name="dc_AllImage_errY" type="xs:double" minOccurs="0" />
+                <xs:element name="Calib_Date" type="xs:string" minOccurs="0" />
+                <xs:element name="Calib_Type" type="xs:int" minOccurs="0" />
+              </xs:sequence>
+            </xs:complexType>
+          </xs:element>
+        </xs:choice>
+      </xs:complexType>
+    </xs:element>
+  </xs:schema>
+  <data>
+    <ObjWidth>8</ObjWidth>
+    <ObjHeight>9</ObjHeight>
+    <FieldSize>30</FieldSize>
+    <DetectionMethod>3</DetectionMethod>
+  </data>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_104718_402.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105033_809.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105038_812.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105045_787.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105050_203.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105059_578.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105104_399.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105112_095.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105116_868.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105120_693.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105123_919.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105137_622.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105142_482.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105146_420.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105152_153.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105203_851.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105212_358.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105223_228.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105233_583.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105248_449.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105301_354.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105315_774.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105327_028.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105334_088.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105343_258.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105349_345.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105353_188.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105355_985.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105359_723.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105403_692.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105409_060.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105424_102.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105433_731.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105439_770.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105445_908.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <images>
+    <ImagePath>C:\Users\latae\Documents\Robot_Basic\Cam_align\cal\c\RealSense_RGB_20260903_105451_148.png</ImagePath>
+    <SourceType>0</SourceType>
+  </images>
+  <results>
+    <ImageCount>36</ImageCount>
+    <focus_lenX>604.65847404954638</focus_lenX>
+    <focus_lenY>604.37241745112067</focus_lenY>
+    <PrincipalX>317.23662886184104</PrincipalX>
+    <PrincipalY>250.61780654705257</PrincipalY>
+    <Dist1>0.11521392709854392</Dist1>
+    <Dist2>-0.25237181765616762</Dist2>
+    <Dist3>0.0010643885484665856</Dist3>
+    <Dist4>0.0011773689675064548</Dist4>
+    <focus_lenX_er>0.3186994194984436</focus_lenX_er>
+    <focus_lenY_er>0.30814492702484131</focus_lenY_er>
+    <PrincipalX_er>0.39436781406402588</PrincipalX_er>
+    <PrincipalY_er>0.46735548973083496</PrincipalY_er>
+    <Dist1_er>0.0030153661500662565</Dist1_er>
+    <Dist2_er>0.021270135417580605</Dist2_er>
+    <Dist3_er>0.00030600427999161184</Dist3_er>
+    <Dist4_er>0.00024503713939338922</Dist4_er>
+    <dc_AllImage_errX>0.091760620673059984</dc_AllImage_errX>
+    <dc_AllImage_errY>0.13281095056763864</dc_AllImage_errY>
+    <Calib_Date>2026-09-03 오전 10:59:00</Calib_Date>
+    <Calib_Type>2</Calib_Type>
+  </results>
+</CalibrationProject>

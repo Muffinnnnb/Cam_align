@@ -1,0 +1,69 @@
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*.pyo
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.mypy_cache/
+
+# ==============================
+# IDE / OS
+# ==============================
+.vscode/
+.idea/
+
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ==============================
+# Logs / local settings
+# ==============================
+logs/
+*.log
+
+viewer_settings.ini
+
+# ==============================
+# Backup / old files
+# ==============================
+old/
+백업/
+
+*.bak
+*.tmp
+
+# ==============================
+# Large point cloud data
+# ==============================
+*.ply
+
+# ==============================
+# Calibration capture images
+# Keep Intrinsic / Distortion / XML
+# ==============================
+cal*/**/*.png
+cal*/**/*.jpg
+cal*/**/*.jpeg
+
+# Per-frame depth metadata
+cal*/d/RealSense_depth_*.json
+
+# ==============================
+# Generated comparison images
+# Keep small JSON result files
+# ==============================
+정렬 비교/**/*.png
+
+# ==============================
+# Papers
+# Keep 논문_색인.md only
+# ==============================
+관련_논문/*.pdf
+관련_논문/PDF_검증_SHA256.csv

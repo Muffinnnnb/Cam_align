@@ -1,0 +1,491 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1138</width>
+    <height>984</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Depth → Target Alignment Comparison</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainLayout">
+    <item>
+     <widget class="QLabel" name="titleLabel">
+      <property name="styleSheet">
+       <string notr="true">font-size: 18px; font-weight: bold; padding: 6px;</string>
+      </property>
+      <property name="text">
+       <string>Depth → Target 정렬 및 rs.align() 비교</string>
+      </property>
+      <property name="alignment">
+       <set>Qt::AlignmentFlag::AlignCenter</set>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QGroupBox" name="folderGroup">
+      <property name="title">
+       <string>입력 폴더와 보정값</string>
+      </property>
+      <layout class="QGridLayout" name="folderLayout">
+       <item row="0" column="0">
+        <widget class="QLabel" name="depthFolderLabel">
+         <property name="text">
+          <string>Depth 폴더</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QLineEdit" name="depthFolderEdit">
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="2">
+        <widget class="QPushButton" name="depthFolderButton">
+         <property name="text">
+          <string>폴더 선택</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="targetFolderLabel">
+         <property name="text">
+          <string>정렬 대상 폴더</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QLineEdit" name="targetFolderEdit">
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="2">
+        <widget class="QPushButton" name="targetFolderButton">
+         <property name="text">
+          <string>폴더 선택</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="targetTypeLabel">
+         <property name="text">
+          <string>대상 스트림</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <layout class="QHBoxLayout" name="calibrationChoiceLayout">
+         <item>
+          <widget class="QComboBox" name="targetTypeCombo">
+           <item>
+            <property name="text">
+             <string>자동 판별</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Right IR (index 2)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Color</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="calibrationSourceLabel">
+           <property name="text">
+            <string>보정값</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="calibrationSourceCombo">
+           <item>
+            <property name="text">
+             <string>직접 측정값</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>RealSense 공장값</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item row="2" column="2">
+        <widget class="QPushButton" name="saveFactoryButton">
+         <property name="text">
+          <string>연결 카메라 공장값 저장</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="depthRangeLabel">
+         <property name="text">
+          <string>Depth 범위 (m)</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <layout class="QHBoxLayout" name="depthDetectionLayout">
+         <item>
+          <widget class="QLabel" name="zMinLabel">
+           <property name="text">
+            <string>z_min</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QDoubleSpinBox" name="zMinSpinBox">
+           <property name="suffix">
+            <string> m</string>
+           </property>
+           <property name="decimals">
+            <number>3</number>
+           </property>
+           <property name="minimum">
+            <double>0.010000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>20.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.050000000000000</double>
+           </property>
+           <property name="value">
+            <double>0.150000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="zMaxLabel">
+           <property name="text">
+            <string>z_max</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QDoubleSpinBox" name="zMaxSpinBox">
+           <property name="suffix">
+            <string> m</string>
+           </property>
+           <property name="decimals">
+            <number>3</number>
+           </property>
+           <property name="minimum">
+            <double>0.010000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>20.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.050000000000000</double>
+           </property>
+           <property name="value">
+            <double>2.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="useTargetRoiCheckBox">
+           <property name="text">
+            <string>Target 체스보드 기반 Depth ROI</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="roiMarginLabel">
+           <property name="text">
+            <string>여유</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="roiMarginSpinBox">
+           <property name="suffix">
+            <string> %</string>
+           </property>
+           <property name="minimum">
+            <number>0</number>
+           </property>
+           <property name="maximum">
+            <number>200</number>
+           </property>
+           <property name="singleStep">
+            <number>5</number>
+           </property>
+           <property name="value">
+            <number>20</number>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item row="3" column="2">
+        <widget class="QPushButton" name="applyDetectionSettingsButton">
+         <property name="text">
+          <string>설정 저장 + 다시 검출</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="contentLayout" stretch="0,1">
+      <item>
+       <layout class="QVBoxLayout" name="fileLayout">
+        <item>
+         <widget class="QLabel" name="fileLabel">
+          <property name="text">
+           <string>촬영 파일</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="fileList">
+          <property name="minimumSize">
+           <size>
+            <width>245</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>310</width>
+            <height>16777215</height>
+           </size>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="reloadButton">
+          <property name="text">
+           <string>목록 새로고침</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="savePointCloudButton">
+          <property name="text">
+           <string>찾은 평면 포인트 클라우드 저장 (.ply)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="saveIrPointCloudButton">
+          <property name="text">
+           <string>대상 영상 색상결합 포인트 클라우드 저장</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="viewerLayout" stretch="1,0,0,0,0,0,0,0">
+        <item>
+         <layout class="QHBoxLayout" name="imageLayout">
+          <item>
+           <widget class="QGroupBox" name="depthGroup">
+            <property name="title">
+             <string>Right IR 픽셀로 정렬된 Depth</string>
+            </property>
+            <layout class="QVBoxLayout" name="depthLayout">
+             <item>
+              <widget class="QLabel" name="depthImageLabel">
+               <property name="minimumSize">
+                <size>
+                 <width>400</width>
+                 <height>300</height>
+                </size>
+               </property>
+               <property name="styleSheet">
+                <string notr="true">background: #111; color: #aaa; border: 1px solid #555;</string>
+               </property>
+               <property name="text">
+                <string>파일을 선택하세요</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="rightGroup">
+            <property name="title">
+             <string>Right IR (클릭하여 Depth 조회)</string>
+            </property>
+            <layout class="QVBoxLayout" name="rightLayout">
+             <item>
+              <widget class="QLabel" name="rightImageLabel">
+               <property name="minimumSize">
+                <size>
+                 <width>400</width>
+                 <height>300</height>
+                </size>
+               </property>
+               <property name="styleSheet">
+                <string notr="true">background: #111; color: #aaa; border: 1px solid #555;</string>
+               </property>
+               <property name="text">
+                <string>파일을 선택하세요</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="viewControlLayout">
+          <item>
+           <widget class="QCheckBox" name="showAlignedDepthCheckBox">
+            <property name="text">
+             <string>체크: 현재 방식 정렬 Depth / 해제: 원본 Depth 평면</string>
+            </property>
+            <property name="checked">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="compareRsCheckBox">
+            <property name="text">
+             <string>rs.align() 비교 표시</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="saveComparisonButton">
+            <property name="text">
+             <string>정렬 비교 결과 저장</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QLabel" name="comparisonStatus">
+          <property name="styleSheet">
+           <string notr="true">font-weight: bold; color: #7a3e00;</string>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="detectionStatus">
+          <property name="text">
+           <string>검출 상태</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="pickedDepthLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 14px; font-weight: bold; color: #005a9c; padding: 4px;</string>
+          </property>
+          <property name="text">
+           <string>대상 영상에서 픽셀을 클릭하세요.</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPlainTextEdit" name="cornerText">
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>90</height>
+           </size>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="placeholderText">
+           <string>양쪽 평면 방정식과 법선</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="calibrateLayout">
+          <item>
+           <widget class="QPushButton" name="calibrateButton">
+            <property name="text">
+             <string>전체 파일로 RT 계산</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="calibrationStatus">
+            <property name="text">
+             <string>기존 결과를 불러옵니다.</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QPlainTextEdit" name="matrixText">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>175</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>210</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <family>Consolas</family>
+            <pointsize>10</pointsize>
+           </font>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="placeholderText">
+           <string>RT matrix</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
