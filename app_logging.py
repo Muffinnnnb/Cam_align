@@ -1,11 +1,11 @@
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 import faulthandler
+from app_paths import output_dir
 
 
-LOG_PATH = Path(__file__).with_name("logs") / "cam_align.log"
+LOG_PATH = output_dir("logs") / "cam_align.log"
 
 
 def get_logger(name):

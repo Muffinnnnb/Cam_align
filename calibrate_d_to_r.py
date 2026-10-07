@@ -8,10 +8,11 @@ import numpy as np
 from scipy.optimize import least_squares
 
 from app_logging import get_logger
+from app_paths import output_dir
 
 
 ROOT = Path(__file__).parent / "cal"
-RESULT_PATH = Path(__file__).parent / "d_to_r_rt.json"
+RESULT_PATH = output_dir("calibration") / "d_to_r_rt.json"
 DEFAULT_DEPTH_DIR = ROOT / "d"
 DEFAULT_TARGET_DIR = ROOT / "r"
 PATTERN = (7, 8)                 # inner corners
@@ -351,17 +352,23 @@ def rotation_from_normals(source, target):
     return R
 
 
-def calibrate(frames=None, result_path=RESULT_PATH):
+def calibrate(frames=None, result_path=RESULT_PATH, source_plane_key="depth_plane",
+              target_plane_key="right_plane", source_name=None, target_name=None,
+              extra_result=None, ransac_angle_deg=1.5, ransac_distance_m=.008):
     started = perf_counter()
     if frames is None:
         frames = {stamp: analyze_frame(stamp) for stamp in timestamps()}
-    LOGGER.info("RT calibration start frames=%d output=%s", len(frames), result_path)
+    LOGGER.info("RT calibration start frames=%d output=%s source_key=%s target_key=%s",
+                len(frames), result_path, source_plane_key, target_plane_key)
     if not frames:
         raise RuntimeError("No matched frames")
-    pairs = []
-    for frame in frames.values():
-        if frame["depth_plane"] and frame["right_plane"]:
-            pairs.append((frame["depth_plane"], frame["right_plane"]))
+    pairs, pair_names = [], []
+    for name, frame in frames.items():
+        source_plane = frame.get(source_plane_key)
+        target_plane = frame.get(target_plane_key)
+        if source_plane is not None and target_plane is not None:
+            pairs.append((source_plane, target_plane))
+            pair_names.append(str(name))
     if len(pairs) < 6:
         raise RuntimeError(f"Not enough plane pairs: {len(pairs)}")
 
@@ -379,7 +386,8 @@ def calibrate(frames=None, result_path=RESULT_PATH):
         t = np.linalg.lstsq(predicted[sample], hr[sample] - hd[sample], rcond=None)[0]
         angle = np.degrees(np.arccos(np.clip(np.sum(predicted * nr, axis=1), -1, 1)))
         distance = abs(hd + predicted @ t - hr)
-        idx = np.flatnonzero((angle < 1.5) & (distance < .008))
+        idx = np.flatnonzero((angle < ransac_angle_deg) &
+                             (distance < ransac_distance_m))
         score = (len(idx), -(angle[idx].mean() if len(idx) else 999))
         if best is None or score > best[0]:
             best = score, R, t, idx
@@ -400,27 +408,57 @@ def calibrate(frames=None, result_path=RESULT_PATH):
                      (hd[idx] + predicted @ x[3:] - hr[idx]) / .003] 
 
     x0 = np.r_[cv2.Rodrigues(R)[0].ravel(), t] # ransac으로 구해진 초기 Rt
-    x = least_squares(residual, x0, method="lm").x # LM 비선형 최적화
-    R, t = cv2.Rodrigues(x[:3])[0], x[3:]
+    initial_inliers = len(idx)
+    # LM can move an initially accepted pair outside the RANSAC thresholds.
+    # Only remove pairs here; do not silently label an unfitted pair an inlier.
+    while True:
+        fit = least_squares(residual, x0, method="lm")
+        if not fit.success or not np.isfinite(fit.x).all():
+            raise RuntimeError(f"LM failed: {fit.message}")
+        R, t = cv2.Rodrigues(fit.x[:3])[0], fit.x[3:]
+        predicted = nd[idx] @ R.T
+        angles = np.degrees(np.arccos(np.clip(np.sum(predicted * nr[idx], axis=1), -1, 1)))
+        distances = abs(hd[idx] + predicted @ t - hr[idx])
+        keep = (angles < ransac_angle_deg) & (distances < ransac_distance_m)
+        if keep.all():
+            break
+        idx = idx[keep]
+        if len(idx) < 6:
+            raise RuntimeError(f"Not enough inliers after LM: {len(idx)}")
+        x0 = fit.x
     predicted = nd[idx] @ R.T
     angle = np.degrees(np.arccos(np.clip(np.sum(predicted * nr[idx], axis=1), -1, 1)))
     distance = hd[idx] + predicted @ t - hr[idx]
     condition = float(np.linalg.cond(predicted))
     RT = np.block([[R, t[:, None]], [np.zeros((1, 3)), np.ones((1, 1))]])
     first_frame = next(iter(frames.values()))
-    depth_dir = Path(first_frame.get("depth_dir", DEFAULT_DEPTH_DIR))
-    target_dir = Path(first_frame.get("target_dir", DEFAULT_TARGET_DIR))
-    result = {"from": depth_dir.name, "to": target_dir.name, "translation_unit": "m",
-              "depth_intrinsic_source": str(depth_dir / "Intrinsic.txt"),
-              "target_intrinsic_source": str(target_dir / "Intrinsic.txt"),
+    depth_dir = Path(first_frame["depth_dir"]) if "depth_dir" in first_frame else None
+    target_dir = Path(first_frame["target_dir"]) if "target_dir" in first_frame else None
+    result = {"from": source_name or depth_dir.name,
+              "to": target_name or target_dir.name,
+              "translation_unit": "m",
               "square_size_m": SQUARE_M,
               "board_size_m": list(BOARD_M), "R": R.tolist(), "t": t.tolist(), "RT": RT.tolist(),
               "plane_pairs": len(pairs), "ransac_inliers": len(idx),
+              "ransac_initial_inliers": initial_inliers,
+              "inlier_validation": "thresholds rechecked after LM",
+              "ransac_inlier_frames": [pair_names[i] for i in idx],
+              "ransac_outlier_frames": [name for i, name in enumerate(pair_names) if i not in set(idx)],
               "nonlinear_method": "LM",
+              "ransac_angle_threshold_deg": float(ransac_angle_deg),
+              "ransac_plane_threshold_m": float(ransac_distance_m),
               "normal_condition": condition,
               "normal_rmse_deg": float(np.sqrt(np.mean(angle ** 2))),
               "plane_rmse_m": float(np.sqrt(np.mean(distance ** 2)))}
-    Path(result_path).write_text(json.dumps(result, indent=2), encoding="utf-8")
+    if depth_dir is not None and (depth_dir / "Intrinsic.txt").exists():
+        result["depth_intrinsic_source"] = str(depth_dir / "Intrinsic.txt")
+    if target_dir is not None and (target_dir / "Intrinsic.txt").exists():
+        result["target_intrinsic_source"] = str(target_dir / "Intrinsic.txt")
+    if extra_result:
+        result.update(extra_result)
+    if result_path is not None:
+        Path(result_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(result_path).write_text(json.dumps(result, indent=2), encoding="utf-8")
     LOGGER.info("RT calibration done optimizer=LM pairs=%d inliers=%d elapsed=%.3fs",
                 len(pairs), len(idx), perf_counter() - started)
     return result

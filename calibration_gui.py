@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFileDialog
 
+from app_paths import APP_DIR, calibration_input, output_dir
 from app_logging import LOG_PATH, get_logger, install_exception_hook, start_hang_watchdog, stop_hang_watchdog
 from calibrate_d_to_r import (DEFAULT_DEPTH_DIR, DEFAULT_TARGET_DIR, RESULT_PATH,
                               align_depth_to_right, analyze_frame, calibrate,
@@ -109,12 +110,12 @@ class ComparisonSaveWorker(QObject):
 class Controller(QObject):
     def __init__(self):
         super().__init__()
-        self.window = QUiLoader().load(str(RESULT_PATH.with_name("calibration_viewer.ui")))
+        self.window = QUiLoader().load(str(APP_DIR / "calibration_viewer.ui"))
         self.images = {}
         self.frames = {}
         self.result = None
         self.factory_result = None
-        self.settings = QSettings(str(RESULT_PATH.with_name("viewer_settings.ini")), QSettings.IniFormat)
+        self.settings = QSettings(str(APP_DIR / "viewer_settings.ini"), QSettings.IniFormat)
         self.depth_dir, self.target_dir = DEFAULT_DEPTH_DIR, DEFAULT_TARGET_DIR
         self.result_path = RESULT_PATH
         self.aligned_depth = None
@@ -122,6 +123,7 @@ class Controller(QObject):
         self.rs_depth_stamp = None
         self.current_stamp = None
         self.save_thread = self.save_worker = None
+        self.nsl_controller = None
         self.depth_base = self.right_base = None
         self.window.depthFolderEdit.setText(str(self.depth_dir))
         self.window.targetFolderEdit.setText(str(self.target_dir))
@@ -154,23 +156,40 @@ class Controller(QObject):
         self.window.saveFactoryButton.clicked.connect(self.save_factory)
         self.window.saveComparisonButton.clicked.connect(self.save_alignment_comparison)
         self.window.applyDetectionSettingsButton.clicked.connect(self.apply_detection_settings)
+        self.window.openNslColorButton.clicked.connect(self.open_nsl_color)
         self.load_calibrations()
         self.reload()
         LOGGER.info("GUI ready depth=%s target=%s log=%s", self.depth_dir,
                     self.target_dir, LOG_PATH)
 
+    def open_nsl_color(self):
+        try:
+            from nsl_color_gui import Controller as NslColorController
+            if self.nsl_controller is None:
+                self.nsl_controller = NslColorController()
+            self.nsl_controller.window.show()
+            self.nsl_controller.window.raise_()
+            self.nsl_controller.window.activateWindow()
+            LOGGER.info("NSL PointCloud -> Color window opened")
+        except Exception as error:
+            LOGGER.exception("NSL PointCloud -> Color window open failed")
+            self.window.statusbar.showMessage(f"NSL 융합 창 열기 실패: {error}")
+
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Resize and obj in self.images:
-            self.set_image(obj, self.images[obj])
-        elif event.type() == QEvent.MouseButtonPress and obj == self.window.rightImageLabel:
-            self.pick_depth(event.position())
-            return True
-        elif (event.type() == QEvent.Close and obj == self.window and
-              self.save_thread is not None and self.save_thread.isRunning()):
-            self.window.statusbar.showMessage("비교 결과 저장이 끝난 후 종료할 수 있습니다.")
-            event.ignore()
-            return True
-        return super().eventFilter(obj, event)
+        try:
+            if event.type() == QEvent.Resize and obj in self.images:
+                self.set_image(obj, self.images[obj])
+            elif event.type() == QEvent.MouseButtonPress and obj == self.window.rightImageLabel:
+                self.pick_depth(event.position())
+                return True
+            elif (event.type() == QEvent.Close and obj == self.window and
+                  self.save_thread is not None and self.save_thread.isRunning()):
+                self.window.statusbar.showMessage("비교 결과 저장이 끝난 후 종료할 수 있습니다.")
+                event.ignore()
+                return True
+            return super().eventFilter(obj, event)
+        except RuntimeError:
+            return False
 
     def calibration_file(self, factory=False):
         if self.depth_dir.resolve() == DEFAULT_DEPTH_DIR.resolve() and self.target_dir.resolve() == DEFAULT_TARGET_DIR.resolve():
@@ -181,7 +200,8 @@ class Controller(QObject):
     def load_calibrations(self):
         self.result_path = self.calibration_file()
         factory_path = self.calibration_file(True)
-        self.result = json.loads(self.result_path.read_text(encoding="utf-8")) if self.result_path.exists() else None
+        read_path, factory_path = calibration_input(self.result_path), calibration_input(factory_path)
+        self.result = json.loads(read_path.read_text(encoding="utf-8")) if read_path.exists() else None
         self.factory_result = json.loads(factory_path.read_text(encoding="utf-8")) if factory_path.exists() else None
         self.calibration_changed()
 
@@ -556,7 +576,7 @@ class Controller(QObject):
         stamp = item.text()
 
         default_path = str(
-            RESULT_PATH.with_name(f"depth_{stamp}.ply")
+            output_dir("pointclouds") / f"depth_{stamp}.ply"
         )
 
         LOGGER.info(
@@ -656,7 +676,7 @@ class Controller(QObject):
         stamp = item.text()
 
         default_path = str(
-            RESULT_PATH.with_name(f"target_{stamp}.ply")
+            output_dir("pointclouds") / f"target_{stamp}.ply"
         )
 
         LOGGER.info(
@@ -759,7 +779,7 @@ class Controller(QObject):
         stamp = item.text()
         folder = QFileDialog.getExistingDirectory(
             self.window, "비교 결과 저장 폴더",
-            str(RESULT_PATH.with_name(f"comparison_{stamp}")))
+            str(output_dir("comparison")))
         if not folder:
             return
         frame = self.frames.get(stamp)

@@ -56,8 +56,7 @@ cal*/**/*.jpeg
 cal*/d/RealSense_depth_*.json
 
 # ==============================
-# Generated comparison images
-# Keep small JSON result files
+# Legacy comparison images (the entire folder is also excluded below)
 # ==============================
 정렬 비교/**/*.png
 
@@ -67,3 +66,36 @@ cal*/d/RealSense_depth_*.json
 # ==============================
 관련_논문/*.pdf
 관련_논문/PDF_검증_SHA256.csv
+
+# Local archive and generated outputs (including RTs and reports)
+/휴지통/
+/output/
+/정렬 비교/
+/captures/
+/nsl_color_settings.ini
+/*_rt.json
+/factory_*.json
+
+# Raw sensor data / temporary analysis data
+*.pcd
+*.raw
+*.bag
+*.npy
+*.npz
+*.pkl
+cal*/**/*.tif
+cal*/**/*.tiff
+cal*/**/*.bmp
+
+# Local environment / credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/

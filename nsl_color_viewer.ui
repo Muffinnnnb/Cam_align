@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>1180</width><height>900</height></rect></property>
+  <property name="windowTitle"><string>NSL PointCloud → Color Calibration &amp; Fusion</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainLayout">
+    <item><widget class="QLabel" name="titleLabel">
+     <property name="text"><string>NSL PointCloud → RealSense Color 평면 보정 / 융합</string></property>
+     <property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
+     <property name="styleSheet"><string notr="true">font-size:18px;font-weight:bold;padding:6px;</string></property>
+    </widget></item>
+    <item><widget class="QGroupBox" name="inputGroup">
+     <property name="title"><string>입력 데이터</string></property>
+     <layout class="QGridLayout" name="inputLayout">
+      <item row="0" column="0"><widget class="QLabel" name="captureRootLabel"><property name="text"><string>Capture Root</string></property></widget></item>
+      <item row="0" column="1"><widget class="QLineEdit" name="captureRootEdit"><property name="readOnly"><bool>true</bool></property></widget></item>
+      <item row="0" column="2"><widget class="QPushButton" name="captureRootButton"><property name="text"><string>폴더 선택</string></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="colorCalLabel"><property name="text"><string>Color 내부 파라미터 폴더</string></property></widget></item>
+      <item row="1" column="1"><widget class="QLineEdit" name="colorCalEdit"><property name="readOnly"><bool>true</bool></property></widget></item>
+      <item row="1" column="2"><widget class="QPushButton" name="colorCalButton"><property name="text"><string>폴더 선택</string></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="rangeLabel"><property name="text"><string>NSL Z 범위</string></property></widget></item>
+      <item row="2" column="1">
+       <layout class="QHBoxLayout" name="rangeLayout">
+        <item><widget class="QLabel" name="zMinLabel"><property name="text"><string>z_min</string></property></widget></item>
+        <item><widget class="QDoubleSpinBox" name="zMinSpinBox">
+         <property name="suffix"><string> m</string></property><property name="decimals"><number>3</number></property>
+         <property name="minimum"><double>0.010000000000000</double></property><property name="maximum"><double>50.000000000000000</double></property>
+         <property name="value"><double>0.100000000000000</double></property>
+        </widget></item>
+        <item><widget class="QLabel" name="zMaxLabel"><property name="text"><string>z_max</string></property></widget></item>
+        <item><widget class="QDoubleSpinBox" name="zMaxSpinBox">
+         <property name="suffix"><string> m</string></property><property name="decimals"><number>3</number></property>
+         <property name="minimum"><double>0.010000000000000</double></property><property name="maximum"><double>50.000000000000000</double></property>
+         <property name="value"><double>20.000000000000000</double></property>
+        </widget></item>
+       </layout>
+      </item>
+      <item row="2" column="2"><widget class="QPushButton" name="applyButton"><property name="text"><string>설정 저장 + 목록 갱신</string></property></widget></item>
+      <item row="3" column="0"><widget class="QLabel" name="geometryLabel"><property name="text"><string>NSL 점군 모델</string></property></widget></item>
+      <item row="3" column="1" colspan="2"><widget class="QComboBox" name="geometryComboBox">
+       <property name="toolTip"><string>원본 PCD는 유지합니다. WF 복원은 저장된 원본 거리맵과 제조사 렌즈 표로 XYZ를 다시 계산하며, 기존 PCD RT와 혼용하지 않습니다.</string></property>
+      </widget></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QLabel" name="activeModelLabel"><property name="text"><string>적용 중인 점군 모델과 RT 확인 중</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+    <item>
+     <layout class="QHBoxLayout" name="contentLayout">
+      <item>
+       <layout class="QVBoxLayout" name="fileLayout">
+        <item><widget class="QLabel" name="fileLabel"><property name="text"><string>촬영쌍</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+        <item><widget class="QListWidget" name="fileList">
+         <property name="minimumSize"><size><width>245</width><height>0</height></size></property>
+         <property name="maximumSize"><size><width>300</width><height>16777215</height></size></property>
+        </widget></item>
+        <item><widget class="QPushButton" name="reloadButton"><property name="text"><string>목록 새로고침</string></property></widget></item>
+        <item><widget class="QPushButton" name="saveFusedButton"><property name="text"><string>Color RGB 융합 PLY 저장</string></property></widget></item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="viewerLayout">
+        <item>
+         <layout class="QHBoxLayout" name="imageLayout">
+          <item><widget class="QGroupBox" name="sourceGroup">
+           <property name="title"><string>NSL PointCloud 평면</string></property>
+           <layout class="QVBoxLayout" name="sourceLayout"><item><widget class="QLabel" name="sourceImageLabel">
+            <property name="minimumSize"><size><width>360</width><height>270</height></size></property>
+            <property name="styleSheet"><string notr="true">background:#111;color:#aaa;border:1px solid #555;</string></property>
+            <property name="text"><string>촬영쌍을 선택하세요</string></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
+           </widget></item></layout>
+          </widget></item>
+          <item><widget class="QGroupBox" name="targetGroup">
+           <property name="title"><string>RealSense Color 체스보드 평면</string></property>
+           <layout class="QVBoxLayout" name="targetLayout"><item><widget class="QLabel" name="targetImageLabel">
+            <property name="minimumSize"><size><width>360</width><height>270</height></size></property>
+            <property name="styleSheet"><string notr="true">background:#111;color:#aaa;border:1px solid #555;</string></property>
+            <property name="text"><string>촬영쌍을 선택하세요</string></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
+           </widget></item></layout>
+          </widget></item>
+         </layout>
+        </item>
+        <item><widget class="QComboBox" name="viewComboBox">
+         <item><property name="text"><string>NSL 독립 평면 후보 (하늘색) / RT 이력은 별도 표시</string></property></item>
+         <item><property name="text"><string>실제 Color RGB 융합 (PLY와 동일 색상)</string></property></item>
+         <item><property name="text"><string>검사용 거리 색상 투영 (RGB 아님)</string></property></item>
+         <item><property name="text"><string>추정 RT의 점-평면 잔차: 초록 &lt;10 / 노랑 10~20 / 빨강 ≥20 mm (합격 판정 아님)</string></property></item>
+        </widget></item>
+        <item><widget class="QLabel" name="geometryNoticeLabel">
+         <property name="text"><string>하늘색=NSL 독립 평면 후보. RT 학습 이력과 변환 후 잔차는 별도입니다. 낮은 잔차는 절대 정합 정확도를 보증하지 않습니다.</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+        </widget></item>
+        <item><widget class="QPushButton" name="applyWfButton"><property name="text"><string>WF 거리맵 복원 + 전용 RT 적용 (원본 보존)</string></property><property name="visible"><bool>false</bool></property></widget></item>
+        <item><widget class="QCheckBox" name="nfCompareCheckBox"><property name="text"><string>잘못된 NF 원본 결과도 비교용으로 허용 (정상 보정으로 사용하지 않음)</string></property><property name="visible"><bool>false</bool></property></widget></item>
+        <item><widget class="QLabel" name="detectionStatus"><property name="text"><string>검출 상태</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+        <item><widget class="QLabel" name="rtCheckStatus"><property name="text"><string>RT 정합 검사 상태</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+        <item><widget class="QLabel" name="pickedDepthLabel">
+         <property name="text"><string>Color 영상을 클릭하면 매칭된 NSL 깊이를 표시합니다.</string></property>
+         <property name="styleSheet"><string notr="true">font-weight:bold;color:#005a9c;padding:4px;</string></property>
+        </widget></item>
+        <item><widget class="QPlainTextEdit" name="planeText">
+         <property name="maximumSize"><size><width>16777215</width><height>110</height></size></property>
+         <property name="readOnly"><bool>true</bool></property>
+        </widget></item>
+        <item>
+         <layout class="QHBoxLayout" name="calibrateLayout">
+          <item><widget class="QPushButton" name="calibrateButton"><property name="text"><string>자동 RT 계산</string></property></widget></item>
+          <item><widget class="QLabel" name="calibrationStatus"><property name="text"><string>기존 RT가 있으면 자동으로 불러옵니다.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+         </layout>
+        </item>
+        <item><widget class="QProgressBar" name="progressBar">
+         <property name="value"><number>0</number></property><property name="visible"><bool>false</bool></property>
+        </widget></item>
+        <item><widget class="QPlainTextEdit" name="matrixText">
+         <property name="minimumSize"><size><width>0</width><height>110</height></size></property>
+         <property name="maximumSize"><size><width>16777215</width><height>230</height></size></property>
+         <property name="font"><font><family>Consolas</family><pointsize>10</pointsize></font></property>
+         <property name="readOnly"><bool>true</bool></property>
+        </widget></item>
+       </layout>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <widget class="QMenu" name="calibrationMenu"><property name="title"><string>보정</string></property>
+    <addaction name="loadRtButton"/><addaction name="validateButton"/>
+   </widget>
+   <widget class="QMenu" name="exportMenu"><property name="title"><string>추가 저장</string></property>
+    <addaction name="saveSourceButton"/><addaction name="saveProjectionButton"/><addaction name="separator"/><addaction name="intensityCheckBox"/>
+   </widget>
+   <addaction name="calibrationMenu"/><addaction name="exportMenu"/>
+  </widget>
+  <action name="loadRtButton"><property name="text"><string>RT JSON 불러오기…</string></property></action>
+  <action name="validateButton"><property name="text"><string>전체 재검사 (RT 유지)</string></property></action>
+  <action name="saveSourceButton"><property name="text"><string>평면 표시 PLY 저장 (NSL 좌표)…</string></property></action>
+  <action name="saveProjectionButton"><property name="text"><string>검사용 거리 투영 PNG 저장…</string></property></action>
+  <action name="intensityCheckBox"><property name="text"><string>PLY에 intensity 포함</string></property><property name="checkable"><bool>true</bool></property></action>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,11 @@
+These two lens tables are unmodified copies supplied with the user's manufacturer SDK:
+NSL-3130AA-Windows-Binary-main/lensData
+
+lens_nf_nano.ini reproduces the existing 320x240 PCD rays at pixel pitch 0.020 mm
+and center (159.5,119.5), to floating-point precision. This establishes how the
+captured XYZ was generated, not which lens is physically fitted.
+
+The manufacturer-supplied manual specifies nominal 110(H) x 78(V) degrees.
+lens_wf_nano.ini is offered as an explicit recovery model from raw radial distance.
+It is not a measured per-unit intrinsic calibration and does not overwrite PCD.
+RT records the table hash, pitch, image size, and center to prevent mixed geometry.
