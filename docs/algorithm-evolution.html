@@ -50,6 +50,12 @@
 <p class="muted">남은 부분 대응: <code>093112_477</code>, <code>094932_432</code>, <code>095014_149</code>, <code>095031_526</code>, <code>095036_917</code>, <code>095122_942</code>, <code>095141_511</code> (모두 20260922). 이 7장은 성공으로 바꾸지 않았습니다.</p>
 <p class="muted" id="v10-validation">검증 기록: <a href="validation-v10.txt">부분 제외 재검증·제약 사항</a>. 다른 배치·RGB 카메라의 실측 데이터는 없어 일반화 성능을 보장하지 않습니다.</p>
 </section>
+<section id="target100" class="chapter"><div class="eyebrow">Added · 100% expansion trial · not adopted</div><h2>100% 확장 시험 — 검증된 v10을 유지</h2>
+<p class="muted">부분 대응을 제외한 100%를 목표로 추가 시험했습니다. 그러나 대응 장수 증가와 RT 안정성을 함께 확인하지 못했으므로, 요청한 중단 조건에 따라 <b>69/76장(90.8%)</b>의 기존 v10을 유지했습니다. 100% 달성을 보고하는 내용이 아닙니다.</p>
+<div class="findings"><article><h3>영역 확장 · 후보 보존</h3><p>결손을 넘는 영역 제안, 유사 후보의 조기 제거 방지를 시험했으나 69/76장으로 동일했습니다. 별도의 거리 구간 분할은 남은 7장 중 추가 대응 없이 모호한 사례만 늘려 채택하지 않았습니다.</p></article><article><h3>숫자는 70 → 71장까지</h3><p>원본 후보에 더 엄격한 20 mm 잔차 피팅을 추가한 시험은 기존 RT 기준 71/76장(93.4%)까지 나왔습니다. 부분을 합산한 수치는 아니지만, 측정점을 더 제외한 결과만으로 정확도 향상을 인정하지 않았습니다.</p></article><article><h3>RT 재검증 실패 → 중단</h3><p>70장·71장 후보 모두 RT 재계산의 첫 번째 시간 구간 분리 검증에서 탈락했습니다. 평면 잔차와 영상 경계 조건을 함께 만족하는 관측이 최소 8개 미만이었습니다. 운영 코드·RT·설정은 교체하지 않았습니다.</p></article></div>
+<div class="notice"><b>최종 유지: v10 · 보드 대응 69장 / 부분 7장.</b> 실패한 시험의 93.4%를 새 성능으로 보고하지 않습니다. 이는 시험한 방법에서 안전한 추가 개선을 확인하지 못했다는 뜻이며, 모든 방법으로 100%가 불가능하다는 증명은 아닙니다.</div>
+<p class="muted">자세한 범위와 중단 근거: <a href="validation-100-percent-trial.txt">100% 확장 시험 기록</a>. 기존 7개 모션그래픽과 앞선 개선 이력은 보존했습니다.</p>
+</section>
 <section id="history" class="chapter"><div class="eyebrow">Repository evidence</div><h2>Git이 실제로 기록한 변화</h2><p class="muted">논리적인 알고리즘 단계와 커밋은 일대일 관계가 아닙니다. 10월 8~14일의 v7·v8 작업은 미커밋 상태였으며, 10월 20일에 기준 커밋으로 함께 보존했습니다. 없는 커밋을 과거 이력처럼 만들지 않았습니다.</p>
 <div class="history">
 <article class="event"><time datetime="2026-09-10">2026.09.10</time><div><h3>출발점 — RealSense Depth → Target</h3><code>9ce40c4</code><p>손실 없는 깊이 읽기, 3D 역투영, Depth 평면 RANSAC, RGB/IR 체스보드 PnP, 법선·평면 오프셋 기반 RT, LM, 가림 처리와 PLY, rs.align 비교가 이미 포함되어 있었습니다. LM을 이후에 새로 추가한 것으로 설명하면 틀립니다.</p></div></article>

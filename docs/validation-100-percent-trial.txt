@@ -1,0 +1,83 @@
+Cam_align — 100% board-association expansion trial (not adopted)
+Date: 2026-10-20 (Asia/Seoul)
+Runtime baseline: e4b0db3; previous documentation: e9006d3.
+
+Decision
+--------
+Retain v10: 69 matched / ALL 76 captures = 90.789%; 7 partials excluded.
+Stop exploratory expansion because increased association counts did not pass
+the existing calibration stability checks. No runtime algorithm, active RT,
+acceptance threshold, default setting or source capture was changed.
+100% is NOT achieved. This does not prove 100% is universally impossible.
+
+Method and scope
+----------------
+The same 76-frame source cache used by the preceding v10 experiment was loaded
+and rechecked with the active v10 RT: exactly 69 matched and 7 partial.
+No new images, camera configuration, manually labelled ROI or external dataset
+was introduced. These trials use cached original XYZ, not an independent test
+set. All association tests use the existing time-block-excluded RT models.
+Partial, ambiguous and unconfirmed states are NOT counted as successes.
+
+Source-only trials (fixed v10 RT for the initial association comparison)
+------------------------------------------------------------------------
+1. Close small invalid holes in the proposal topology before range connected
+   components; use only existing finite XYZ for final fitting: 69/76.
+   Proposal smoothing does not create new point coordinates.
+2. Retain additional near-duplicate source candidates instead of pruning them
+   early, including hole-aware regions and independent paired supports: 69/76.
+3. Hole-aware proposals + stricter source-plane residual screening
+   (20 mm instead of 30 mm for the supplemental fit only): 70/76 = 92.105%.
+4. Original v10 candidates + supplemental 20 mm source refits, with the
+   supplemental near-duplicate hypotheses retained: 71/76 = 93.421%.
+   Newly matched: 20260922_095014_149, 20260922_095122_942.
+5. Alternative radial-distance bands (100/200/300 mm widths) were tested only
+   on the remaining 7 partials: zero additional matches; one became ambiguous.
+   This was a 7-frame diagnostic, NOT a 76-frame success-rate result.
+
+All existing structural eligibility and finite-board identity thresholds were
+unchanged. The tighter supplemental source fit removes measured samples; it is
+not a measurement-noise calibration and must not be treated as improved physical
+accuracy solely because the selected points look flatter.
+
+Calibration validation, not just the displayed count
+----------------------------------------------------
+For trials 3 and 4, re-estimate source-only dimensions, grouped RANSAC, linear-
+loss LM and the four contiguous-time-block models using the trial candidates.
+BOTH recalibrations failed fold 0 with the existing exception:
+  시간 구간 분리 검증 실패. 기존 RT/설정 유지:
+  fold 0: 영상 경계/평면 정합 인라이어 부족. 기존 RT를 유지합니다.
+
+The guard in nsl_projection_fit.refine_projection requires at least 8 selected
+observations after jointly checking point-plane RMS <20 mm and bidirectional
+boundary RMS <15 px. A failure is evidence that the proposed calibration did
+not satisfy the existing validation, not a numerical measurement of how much
+RGB alignment worsened. No failed trial RT was written or activated.
+
+Therefore 70/76 and 71/76 are NOT release results and NOT completed improvements.
+No further attempts were made to relax these checks or force 100%.
+
+Remaining limitations
+---------------------
+The retained v10 partials include incomplete source footprints and depth noise
+large relative to their in-plane spread. Several source planes have adequate
+extent but fail flatness or quadrilateral-support tests. Simply relaxing those
+tests or trimming more points could also accept body/mixed-surface observations.
+The trials did not establish a safe improvement over the current best release.
+No claim is made that every possible algorithm has been exhausted.
+
+Preserved active artifacts
+-------------------------
+output/calibration/nsl_to_color_wf_range_auto_v10_rt.json
+SHA256: 93565cbefedeaa1aeddb36d562f46bda6a01191fb80461a9415c92c69519d384
+nsl_color_settings.ini
+SHA256: 5acf75c628a523a1661b7228af1eb4cb342e85ed298c7944044a76ce573b7ca7
+
+Local experimental scripts, cached candidates, comparison images and the
+machine-readable failed calibration report are preserved under:
+output/validation/full_board_push_20261020/
+The failed calibration is also recorded in output/logs/cam_align.log.
+These local data/artifacts are excluded from GitHub.
+
+The existing algorithm-evolution.html receives this trial as an added section;
+the v10 result and previous motion-graphic scenes remain unchanged.
