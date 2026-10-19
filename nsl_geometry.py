@@ -26,7 +26,38 @@ def rt_geometry(calibration):
     expected = geometry_spec(spec.get('mode', 'pcd'))
     if spec != expected:
         raise ValueError('RT의 NSL 거리→XYZ 설정/변환표가 현재 모델과 다릅니다. 해당 모델로 재계산하세요.')
+    ray_scale(calibration)
     return expected['mode']
+
+
+def ray_scale(calibration):
+    """An explicit RT-bound estimated ray model, never a change to captured data."""
+    correction = calibration.get('source_ray_correction')
+    if correction is None:
+        return 1.
+    if (calibration.get('source_geometry', {}).get('mode') != 'wf_range'
+            or correction.get('model') != 'radial_angle_scale'):
+        raise ValueError('광선 각도 보정은 명시된 WF 복원 모델에만 적용할 수 있습니다.')
+    scale = float(correction['scale'])
+    if not np.isfinite(scale) or not .7 <= scale <= 1.3:
+        raise ValueError('추정 광선 각도 계수가 유효 범위 밖입니다.')
+    return scale
+
+
+def scale_ray_angles(points, scale=1.):
+    """Scale polar angles, preserving radial range, azimuth, invalid points and input."""
+    points = np.asarray(points, dtype=np.float64)
+    if scale == 1.:
+        return points
+    rho = np.linalg.norm(points[..., :2], axis=-1)
+    distance = np.linalg.norm(points, axis=-1)
+    theta = np.arctan2(rho, points[..., 2]) * scale
+    factor = np.divide(np.sin(theta), rho, out=np.zeros_like(rho), where=rho > 0)
+    return np.concatenate((points[..., :2]*factor[..., None], np.cos(theta)[..., None]), axis=-1)*distance[..., None]
+
+
+def corrected_points(points, calibration):
+    return scale_ray_angles(points, ray_scale(calibration))
 
 
 def check_geometry(frame, calibration):

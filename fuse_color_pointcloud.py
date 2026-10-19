@@ -10,7 +10,7 @@ import numpy as np
 
 from app_logging import get_logger, install_exception_hook
 from app_paths import OUTPUT_DIR
-from nsl_geometry import geometry_spec, range_to_xyz, rt_geometry, detected_lens, fusion_block_reason
+from nsl_geometry import geometry_spec, range_to_xyz, rt_geometry, detected_lens, fusion_block_reason, ray_scale, scale_ray_angles
 
 
 ROOT = Path(__file__).resolve().parent
@@ -208,12 +208,13 @@ def fuse_points(
     return_indices: bool = False,
     organized_shape=None,
     occlusion_tolerance_m=.015,
+    source_ray_scale=1.,
 ):
     # The UI range is NSL Z, consistently for detection, preview and exports.
     source_z = xyz_mm[:, 2] * .001
     source_valid = np.isfinite(xyz_mm).all(axis=1) & (xyz_mm[:, 2] < 64000)
     source_valid &= (source_z >= z_min) & (source_z <= z_max) & (source_z > 0)
-    xyz_m = xyz_mm[source_valid] * 0.001
+    xyz_m = scale_ray_angles(xyz_mm[source_valid] * 0.001, source_ray_scale)
     indices = np.flatnonzero(source_valid)
     intensity = intensity[source_valid]
     points = (r @ xyz_m.T).T + t
@@ -236,7 +237,7 @@ def fuse_points(
         full_points = np.full((len(xyz_mm), 3), np.nan)
         full_uv = np.full((len(xyz_mm), 2), np.nan)
         # Keep off-screen vertices too: a triangle may cross the image boundary.
-        all_points = xyz_mm * .001 @ r.T + t
+        all_points = scale_ray_angles(xyz_mm * .001, source_ray_scale) @ r.T + t
         all_valid = source_valid & np.isfinite(all_points).all(axis=1) & (all_points[:, 2] > 0)
         full_points[all_valid] = all_points[all_valid]
         if all_valid.any():
@@ -263,6 +264,7 @@ def fuse_points(
         "z_range_frame": "NSL",
         "output_coordinate_frame": "RealSense Color camera",
         "coordinate_unit": "meter",
+        "source_ray_angle_scale": float(source_ray_scale),
     }
     result = points.astype(np.float32), rgb, intensity.astype(np.float32), u, v, stats
     return (*result, indices) if return_indices else result
@@ -331,6 +333,7 @@ def process_pair(pair: dict, output: Path, k, dist, r, t, rt_meta, args) -> dict
     points, rgb, intensity, u, v, stats = fuse_points(
         xyz_mm, intensity, image, k, dist, r, t,
         args.z_min, args.z_max, not args.keep_occluded, organized_shape=shape,
+        source_ray_scale=ray_scale(rt_meta),
     )
     if not len(points):
         raise ValueError('Color 시야에 투영되는 점이 없습니다. 빈 PLY는 저장하지 않습니다.')

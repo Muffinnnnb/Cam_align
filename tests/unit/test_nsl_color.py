@@ -14,6 +14,19 @@ from nsl_geometry import range_to_xyz, geometry_spec, check_geometry, rt_geometr
 
 
 class GeometryTests(unittest.TestCase):
+    def test_plane_highlight_is_green_and_only_changes_display(self):
+        self.assertEqual(nc.PLANE_CANDIDATE_RGB, (0, 255, 0))
+        xyz = np.array([[0, 0, 500.], [1, 0, 600.], [0, 1, 700.], [1, 1, 800.]])
+        original = xyz.copy()
+        mask = np.array([[True, False], [False, True]])
+        base = nc.pointcloud_view(xyz, (2, 2))
+        shown = nc.pointcloud_view(xyz, (2, 2), {'mask': mask},
+                                  plane_color=nc.PLANE_CANDIDATE_RGB[::-1])
+        expected = np.rint(base[mask] * .25 + np.array([0, 255, 0]) * .75).astype(np.uint8)
+        np.testing.assert_array_equal(shown[mask], expected)
+        np.testing.assert_array_equal(shown[~mask], base[~mask])
+        np.testing.assert_array_equal(xyz, original)
+
     def test_nf_guard_checks_before_projection_cache(self):
         frame={'source_geometry':{'mode':'pcd'},'source_lens':'nf'}
         self.assertTrue(fusion_block_reason(frame))

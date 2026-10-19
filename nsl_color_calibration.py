@@ -16,15 +16,18 @@ from fuse_color_pointcloud import (
     DEFAULT_CAPTURE_ROOT, DEFAULT_COLOR_CAL, capture_pairs, fuse_points,
     read_source_cloud, write_binary_ply, write_image,
 )
-from nsl_geometry import geometry_spec, check_geometry, source_geometry_warning, detected_lens, fusion_block_reason
+from nsl_geometry import geometry_spec, check_geometry, source_geometry_warning, detected_lens, fusion_block_reason, corrected_points, ray_scale
 from hashlib import sha256
 from nsl_plane_fit import complete_support, fit_point_planes, support_quality, cell_means
+from nsl_projection_fit import observation, outline_errors, refine_projection
+from nsl_dimensions import estimate_source_correction, measured_size
+from nsl_board_identity import identify_board, frame_fingerprint
 
 
 ROOT = Path(__file__).resolve().parent
 RESULT_PATH = output_dir("calibration") / "nsl_to_color_rt.json"
 LOGGER = get_logger("nsl_color")
-PLANE_CANDIDATE_RGB = (80, 180, 255)  # Detection, NOT an RT/ground-truth pass.
+PLANE_CANDIDATE_RGB = (0, 255, 0)  # Visibility only, NOT an RT/ground-truth pass.
 
 
 def _fit_plane(points: np.ndarray):
@@ -277,6 +280,7 @@ def analyze_pair(pair: dict, color_cal=DEFAULT_COLOR_CAL,
         "target_dir": Path(color_cal), "z_min": z_min, "z_max": z_max,
     }
     assess_support(frame)
+    frame['board_identity'] = identify_board(frame, None, k, dist)
     LOGGER.info(
         "NSL frame analyzed stamp=%s geometry=%s source_plane=%s target_plane=%s elapsed=%.3fs",
         pair["timestamp"], geometry, source_plane is not None, target_plane is not None,
@@ -329,8 +333,8 @@ def analyze_capture(root=DEFAULT_CAPTURE_ROOT, color_cal=DEFAULT_COLOR_CAL,
 
 
 def plane_projection_metrics(frame: dict, plane: dict, calibration: dict,
-                             color_cal=DEFAULT_COLOR_CAL, margin=.15):
-    empty = {"overlap": 0., "coverage": 0., "iou": 0.}
+                             color_cal=DEFAULT_COLOR_CAL, margin=0.):
+    empty = {"overlap": 0., "coverage": 0., "iou": 0., "outside_fraction": 1., "margin": float(margin)}
     if plane is None or frame.get("target_plane") is None:
         return empty
     grid = np.asarray(frame["xyz_mm"], np.float64).reshape(*frame["pcd_shape"], 3) * .001
@@ -341,7 +345,7 @@ def plane_projection_metrics(frame: dict, plane: dict, calibration: dict,
 
     R = np.asarray(calibration["R"], np.float64)
     t = np.asarray(calibration["t"], np.float64)
-    transformed = points @ R.T + t
+    transformed = corrected_points(points, calibration) @ R.T + t
     K, dist = camera(color_cal)
     uv = cv2.projectPoints(
         transformed, np.zeros(3), np.zeros(3), K, dist
@@ -379,11 +383,13 @@ def plane_projection_metrics(frame: dict, plane: dict, calibration: dict,
     mask = np.zeros((height, width), np.uint8)
     cv2.fillConvexPoly(mask, np.rint(polygon).astype(np.int32), 1)
     # Points outside the Color FOV count as non-overlap as well.
+    strict_overlap = float(np.count_nonzero(board[v[inside], u[inside]]) / len(points))
     return {"overlap": float(np.count_nonzero(mask[v[inside], u[inside]]) / len(points)),
-            "coverage": float(coverage), "iou": float(iou)}
+            "coverage": float(coverage), "iou": float(iou),
+            "outside_fraction": 1-strict_overlap, "margin": float(margin)}
 
 
-def plane_projection_overlap(frame, plane, calibration, color_cal=DEFAULT_COLOR_CAL, margin=.15):
+def plane_projection_overlap(frame, plane, calibration, color_cal=DEFAULT_COLOR_CAL, margin=0.):
     return plane_projection_metrics(frame, plane, calibration, color_cal, margin)["overlap"]
 
 
@@ -408,7 +414,7 @@ def guided_plane_from_color(frame: dict, calibration: dict,
     valid = np.isfinite(xyz).all(axis=1)
     valid &= (xyz[:, 2] >= frame["z_min"]) & (xyz[:, 2] <= frame["z_max"])
     valid_indices = np.flatnonzero(valid)
-    source = xyz[valid]
+    source = corrected_points(xyz[valid], calibration)
     if len(source) < min_points:
         return None
 
@@ -576,8 +582,30 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
                     weights.append(q['weight'])
         else:
             excluded[str(name)] = quality['reasons']
-    status('고정 후보 대응 + 점-평면/유한 판 범위 RANSAC / LM 계산 중...')
-    current = fit_point_planes(records, weights=weights)
+    # Keep the NSL-only selection frozen: later RT candidate choices must not
+    # feed back into dimensional calibration, including in held-out folds.
+    dimension_input = {name: {'source_plane': f.get('source_plane'), 'xyz_mm': f['xyz_mm'],
+                             'pcd_shape': f['pcd_shape']} for name, f in frames.items()}
+    K, distortion = camera(color_cal)
+
+    def fit_training(ids, train_names):
+        correction, audit = (estimate_source_correction({n: dimension_input[n] for n in train_names})
+                             if geometry['mode'] == 'wf_range' else (None, {'applied': False}))
+        model = {'source_geometry': geometry}
+        if correction:
+            model['source_ray_correction'] = correction
+        adjusted = [(records[i][0], corrected_points(records[i][1], model), records[i][2],
+                     corrected_points(records[i][3], model)) for i in ids]
+        coarse = fit_point_planes(adjusted, weights=[weights[i] for i in ids])
+        coarse.update(model)
+        items = [observation(frames[name], references[ids[index]])
+                 for name, index in coarse['selected_record_indices'].items()]
+        result = refine_projection(items, coarse, K, distortion) if any(p is not None for p in items) else coarse
+        result['nsl_dimension_audit'] = audit
+        return result
+
+    status('NSL 독립 치수 검사 → 고정 광선 모델 → RANSAC / 영상 경계 + 평면 LM 계산 중...')
+    current = fit_training(list(range(len(records))), set(frames))
     chosen = current['selected_record_indices']
     for name, index in chosen.items():
         frames[name]['source_plane'] = references[index]
@@ -586,7 +614,7 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'from': 'nsl_pointcloud', 'to': 'color', 'translation_unit': 'm',
         'source_type': 'NSL organized point cloud', 'target_type': 'RealSense color',
         'square_size_m': .03, 'board_size_m': list(BOARD_M),
-        'source_geometry': geometry, 'calibration_version': 6,
+        'source_geometry': geometry, 'calibration_version': 8,
         'capture_root': str(Path(capture_root).resolve()),
         'target_intrinsic_source': str(Path(color_cal)/'Intrinsic.txt'),
         'target_distortion_source': str(Path(color_cal)/'Distortion.txt'),
@@ -598,11 +626,13 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'eligibility_policy': 'independent source hypotheses; structural support + quadrilateral footprint; no precision-based early ranking; explicit no-board outcome',
         'projection_coverage_threshold': .75,
         'source_geometry_check': 'fixed full support / raw residual / occupied cells / depth discontinuities',
-        'guided_refinement': 'no RT-based point trimming; training chooses among fixed source candidates; display remains source-only',
+        'guided_refinement': 'fixed source candidates for training; separate finite-board association for display; no RT-based point trimming',
     })
+    if 'color' in next(iter(frames.values())):
+        current['target_image_size'] = list(next(iter(frames.values()))['color'].shape[1::-1])
     # Hold out contiguous TIME BLOCKS, not alternating neighboring frames.
     # Test support is source-only candidate #1, NEVER selected by the trial RT.
-    rows, errors = [], []
+    rows, errors, identity_models = [], [], []
     names = sorted(frames)
     if len(chosen) >= 12:
         for fold in range(4):
@@ -612,13 +642,33 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
             train = [records[i] for i in train_ids]
             test = [r for r in all_records if r[0] in held_out]
             try:
-                trial = fit_point_planes(train, weights=[weights[i] for i in train_ids])
+                baseline = fit_point_planes(train, weights=[weights[i] for i in train_ids])
+                trial = fit_training(train_ids, set(names)-held_out)
+                identity_models.append({
+                    **{k: trial[k] for k in ('R', 't', 'source_geometry', 'source_ray_correction') if k in trial},
+                    'training_frames': sorted(set(names)-held_out),
+                    'heldout_fingerprints': {n: frame_fingerprint(frames[n]) for n in held_out},
+                })
                 R, t = np.array(trial['R']), np.array(trial['t'])
                 for name, points, target, center in test:
-                    residual = (points@R.T+t)@target['normal']-target['h']
-                    rows.append({'name': name, 'fold': fold,
+                    transformed = corrected_points(points, trial)@R.T+t
+                    residual = transformed@target['normal']-target['h']
+                    old_residual = (points@np.asarray(baseline['R']).T+baseline['t'])@target['normal']-target['h']
+                    row = {'name': name, 'fold': fold,
+                                 'baseline_point_rms_mm': float(np.sqrt(np.mean(old_residual**2))*1000),
                                  'point_rms_mm': float(np.sqrt(np.mean(residual**2))*1000),
-                                 'center_error_mm': float(np.linalg.norm(center@R.T+t-target['center'])*1000)})
+                                 'center_error_mm': float(np.linalg.norm(corrected_points(center, trial)@R.T+t-target['center'])*1000)}
+                    # Test the untouched source-only footprint, not a candidate
+                    # preferred by the held-out RT. No manual annotations read.
+                    f = frames[name]
+                    p = dimension_input[name]['source_plane']
+                    if item := observation(f, p):
+                        row['boundary_mean_px'] = outline_errors(item, trial, K, distortion)['boundary_mean_px']
+                        row['baseline_boundary_mean_px'] = outline_errors(item, baseline, K, distortion)['boundary_mean_px']
+                        row['outside_fraction'] = plane_projection_metrics(f, p, trial, color_cal)['outside_fraction']
+                        row['baseline_outside_fraction'] = plane_projection_metrics(f, p, baseline, color_cal)['outside_fraction']
+                    row['source_ray_scale'] = ray_scale(trial)
+                    rows.append(row)
             except RuntimeError as exc:
                 errors.append(f'fold {fold}: {exc}')
                 LOGGER.warning('Cross validation failed: %s', errors[-1])
@@ -636,11 +686,27 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'point_rms_p90_mm': float(np.percentile(values[:,0],90)) if len(values) else None,
         'center_p90_mm': float(np.percentile(values[:,1],90)) if len(values) else None,
     }
+    pixel_rows = [r for r in rows if 'boundary_mean_px' in r]
+    if current.get('projection_refinement', {}).get('applied') and not pixel_rows:
+        raise RuntimeError('영상 경계 RT의 분리 촬영 검증 자료가 부족합니다. 기존 RT/설정을 유지합니다.')
+    if pixel_rows and current.get('projection_refinement', {}).get('applied'):
+        v = current['cross_validation']
+        for key in ('boundary_mean_px', 'baseline_boundary_mean_px', 'outside_fraction',
+                    'baseline_outside_fraction', 'baseline_point_rms_mm'):
+            v[key+'_median'] = float(np.median([r[key] for r in pixel_rows]))
+        passed = (v['boundary_mean_px_median'] < v['baseline_boundary_mean_px_median']
+                  and v['point_rms_median_mm'] <= v['baseline_point_rms_mm_median']+3)
+        v['projection_improved'] = passed
+        if not passed:
+            raise RuntimeError('분리 촬영의 경계/깊이 오차 개선 확인 실패. 기존 RT/설정을 유지합니다.')
     current['fitted_plane_selection'] = {
         name: {'candidate_index': next(i for i,p in enumerate(frames[name]['source_candidates']) if p is frames[name]['source_plane']), 'normal': frames[name]['source_plane']['normal'].tolist(),
                'h': frames[name]['source_plane']['h'],
                'support_signature': support_signature(frames[name], frames[name]['source_plane'])}
         for name in chosen}
+    current['board_identity_models'] = identity_models
+    current['board_identity_policy'] = ('Fixed source hypotheses associated in metric board coordinates; '
+        'known frames use time-block-excluded models; no RT-based point trimming or candidate feedback into RT fitting.')
     current['final_validated_frames'] = []
     for frame in frames.values():
         select_plane_for_rt(frame, current, color_cal)
@@ -648,7 +714,8 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
             current['final_validated_frames'].append(frame['timestamp'])
     current['calibration_warning'] = (
         '검출 후보와 RT 학습 이력은 별도입니다. 시간 분리 검증도 내부 일관성 검사이며 절대 정확도 검증은 아닙니다. '
-        'WF는 명목 광선 모델이며, 비동기 촬영/원본 점군 왜곡을 RT 하나로 제거할 수 없습니다. '
+        'NSL 치수 보정은 RGB/RT와 독립 추정이며 개별 장비 공장 보정값이 아닙니다. '
+        '비동기 촬영/원본 점군 왜곡을 RT 하나로 제거할 수 없습니다. '
         '교차검증과 실제 Color 시점 투영을 확인하세요.')
     status(f"자동 계산 완료: 전체 {len(frames)} / 학습 후보 {len(chosen)} / "
            f"실제 사용 {current['ransac_inliers']} / 제외 {len(frames)-current['ransac_inliers']}")
@@ -669,18 +736,27 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
 
 def select_plane_for_rt(frame: dict, calibration: dict,
                         color_cal=DEFAULT_COLOR_CAL):
-    """Measure RT consistency; NEVER change the source-only detection by RT.
+    """Preserve source-only support; record board association separately for display.
 
-    Saved training support may differ from the independently displayed candidate.
-    Keep its provenance separately; neither is external ground truth.
+    Training support, source detection and displayed association are distinct.
+    None is external ground truth, and association cannot change RT training.
     """
     check_geometry(frame, calibration)
+    if (frame.get('target_plane') or {}).get('corners3d') is not None:
+        frame['board_identity'] = identify_board(frame, calibration, *camera(color_cal))
+    elif 'board_identity' in frame:
+        frame['board_identity'] = dict(state='unverified', plane=None,
+                                      basis='Color 보드 검출 없음: 대응 확인 불가')
+    if identity := frame.get('board_identity'):
+        LOGGER.info('Board association stamp=%s state=%s candidate=%s basis=%s evidence=%s reason=%s',
+                    frame['timestamp'], identity['state'], identity.get('index'), identity['basis'],
+                    identity.get('evidence'), identity.get('reason'))
     target = frame.get("target_plane")
     candidates = board_candidates(frame)
     frame.update(plane_valid=False, rt_consistent=False, rt_inlier=False,
                  calibration_plane=None, fitted_plane_reproduced=False, training_record_known=False)
     for key in ("rt_normal_error_deg", "rt_plane_error_m", "projection_overlap", "projection_overlap_best",
-                "projection_coverage", "projection_iou", "quality_failures", "rt_point_rms_m", "rt_cell_rms_m", "rt_center_error_m"):
+                "projection_coverage", "projection_iou", "quality_failures", "rt_point_rms_m", "rt_cell_rms_m", "rt_center_error_m", "projection_outside", "boundary_mean_px", "boundary_p90_px", "corrected_source_size_m"):
         frame.pop(key, None)
     if target is None or not candidates:
         frame["source_plane"] = candidates[0] if candidates else None
@@ -720,19 +796,29 @@ def select_plane_for_rt(frame: dict, calibration: dict,
     overlap_limit = float(calibration.get("projection_overlap_threshold", .80))
     projection = plane_projection_metrics(frame, plane, calibration, color_cal)
     overlap = projection['overlap']
-    predicted = R @ plane['normal']
+    source_normal, source_h = plane['normal'], plane['h']
+    if ray_scale(calibration) != 1.:
+        points = frame['xyz_mm'].reshape(*frame['pcd_shape'], 3)[plane['mask']]*.001
+        _, source_normal, source_h = _fit_plane(cell_means(corrected_points(points, calibration)))
+    predicted = R @ source_normal
     angle = float(np.degrees(np.arccos(np.clip(predicted @ target['normal'], -1, 1))))
-    distance = float(abs(plane['h'] + predicted @ t - target['h']))
+    distance = float(abs(source_h + predicted @ t - target['h']))
     frame.update(source_plane=plane, rt_normal_error_deg=angle, rt_plane_error_m=distance,
                  projection_overlap=overlap, projection_overlap_best=overlap,
-                 projection_coverage=projection['coverage'], projection_iou=projection['iou'])
+                 projection_coverage=projection['coverage'], projection_iou=projection['iou'],
+                 projection_outside=projection.get('outside_fraction', 1-overlap))
+    if item := observation(frame, plane):
+        frame.update(outline_errors(item, calibration, *camera(color_cal)))
     if plane.get('fit_method'):
         points = frame['xyz_mm'].reshape(*frame['pcd_shape'], 3)[plane['mask']]*.001
+        points = corrected_points(points, calibration)
+        if ray_scale(calibration) != 1.:
+            frame['corrected_source_size_m'] = measured_size(points).tolist()
         residual = (points@R.T+t)@target['normal']-target['h']
         frame['rt_point_rms_m'] = float(np.sqrt(np.mean(residual**2)))
         balanced = cell_means(points)
         frame['rt_cell_rms_m'] = float(np.sqrt(np.mean(((balanced@R.T+t)@target['normal']-target['h'])**2)))
-        frame['rt_center_error_m'] = float(np.linalg.norm(plane['board_center']@R.T+t-target['center']))
+        frame['rt_center_error_m'] = float(np.linalg.norm(corrected_points(plane['board_center'], calibration)@R.T+t-target['center']))
     failures = list(plane.get('quality_reasons', ['지지영역 품질 미검사']))
     if angle >= angle_limit:
         failures.append(f'RT 법선 {angle:.2f}° ≥ {angle_limit:g}°')
@@ -759,9 +845,20 @@ def select_plane_for_rt(frame: dict, calibration: dict,
 
 
 def plane_status(frame: dict, calibration=None):
-    """Neutral detection state; RT membership/consistency never drives color."""
+    """Board association state; RT training membership is reported separately."""
     training = ('used' if frame.get('rt_inlier') else 'excluded') if frame.get('training_record_known') else 'unknown'
     training_text = {'used': '사용', 'excluded': '제외', 'unknown': '미확인/미계산'}[training]
+    if frame.get('target_plane') is None or not frame.get('source_candidates'):
+        return {'state': 'failed', 'detected': False, 'training': training,
+                'message': 'NSL 후보 또는 Color 보드 검출 없음. RT 정확도 판정과 별개.'}
+    if identity := frame.get('board_identity'):
+        state = identity['state']
+        return {'state': {'matched': 'candidate', 'partial': 'partial'}.get(state, 'unconfirmed'),
+                'detected': state in ('matched', 'partial'), 'training': training,
+                'identity': state, 'evidence': identity.get('evidence'), 'basis': identity['basis'],
+                'candidate_index': identity.get('index'),
+                'message': f"{identity.get('reason', identity['basis'])} / {identity['basis']} / "
+                f'RT 학습 이력: {training_text}. 대응 확인은 정밀도 합격 판정이 아닙니다.'}
     if frame.get("target_plane") is None or not board_candidates(frame):
         return {'state': 'failed', 'detected': False, 'training': training,
                 'message': '평면쌍 검출 불가 (NSL 후보 또는 Color 체스보드 없음). RT 정확도 판정과 별개.'}
@@ -778,9 +875,14 @@ def project_to_color(frame: dict, calibration: dict, color_cal=DEFAULT_COLOR_CAL
     if reason := fusion_block_reason(frame):
         raise ValueError(reason)
     k, dist = camera(color_cal)
+    if calibration.get('target_image_size') and list(frame['color'].shape[1::-1]) != calibration['target_image_size']:
+        raise ValueError('Color 영상 해상도가 보정 당시와 다릅니다. 내부 파라미터 확인 후 재보정하세요.')
+    if ('target_intrinsics' in calibration and not np.allclose(k, calibration['target_intrinsics'], rtol=0, atol=1e-8)) or (
+            'target_distortion' in calibration and not np.allclose(dist, calibration['target_distortion'], rtol=0, atol=1e-8)):
+        raise ValueError('Color 내부 파라미터가 RT 계산 당시와 다릅니다. 해당 폴더로 다시 보정하세요.')
     r = np.asarray(calibration["R"], np.float64)
     t = np.asarray(calibration["t"], np.float64)
-    key = (tuple(r.ravel()), tuple(t), tuple(k.ravel()), tuple(dist.ravel()),
+    key = (tuple(r.ravel()), tuple(t), tuple(k.ravel()), tuple(dist.ravel()), ray_scale(calibration),
            frame['z_min'], frame['z_max'], visible_only, id(frame['xyz_mm']), id(frame['color']))
     cached = frame.get('_color_projection')
     if cached is not None and cached[0] == key:
@@ -788,7 +890,7 @@ def project_to_color(frame: dict, calibration: dict, color_cal=DEFAULT_COLOR_CAL
     result = fuse_points(
         frame["xyz_mm"], frame["intensity"], frame["color"], k, dist, r, t,
         frame["z_min"], frame["z_max"], visible_only, True,
-        organized_shape=frame["pcd_shape"],
+        organized_shape=frame["pcd_shape"], source_ray_scale=ray_scale(calibration),
     )
     frame['_color_projection'] = key, result
     frame['projection_stats'] = result[5]
@@ -802,20 +904,30 @@ def aligned_depth(frame: dict, calibration: dict, color_cal=DEFAULT_COLOR_CAL):
     if len(points):
         depth[v, u] = points[:, 2]
     return depth
-def save_source_cloud(path: Path, frame: dict, inspection=False, include_intensity=False):
+def displayed_board(frame):
+    identity = frame.get('board_identity')
+    return identity['plane'] if identity is not None else frame.get('source_plane')
+
+
+def save_source_cloud(path: Path, frame: dict, inspection=False, include_intensity=False, calibration=None):
     xyz = frame["xyz_mm"] * .001
     valid = np.isfinite(xyz).all(axis=1) & (xyz[:, 2] >= frame["z_min"]) & (xyz[:, 2] <= frame["z_max"])
-    points = xyz[valid].astype(np.float32)
+    if calibration is not None:
+        check_geometry(frame, calibration)
+    points = corrected_points(xyz[valid], calibration or {}).astype(np.float32)
     colors = np.full((len(points), 3), 180, np.uint8)
-    plane = frame.get("inspection_plane") if inspection else frame.get("source_plane")
+    plane = frame.get("inspection_plane") if inspection else displayed_board(frame)
     if plane is not None:
         selected = np.asarray(plane["mask"], bool).reshape(-1)[valid]
-        colors[selected] = (0, 255, 255) if inspection else PLANE_CANDIDATE_RGB
+        partial = (frame.get('board_identity') or {}).get('state') == 'partial'
+        colors[selected] = (0, 190, 255) if inspection or partial else PLANE_CANDIDATE_RGB
     else:
         selected = np.zeros(len(points), bool)
     intensity = frame["intensity"][valid] if include_intensity else None
     mode = frame.get('source_geometry', {'mode':'pcd'})['mode']
-    write_binary_ply(Path(path), points, colors, intensity, coordinate_frame=f"NSL camera / geometry {mode}")
+    scale = ray_scale(calibration or {})
+    write_binary_ply(Path(path), points, colors, intensity,
+                     coordinate_frame=f"NSL camera / geometry {mode} / ray_angle_scale {scale:.9f} / before RT")
     LOGGER.info("Source PLY saved path=%s points=%d selected=%d inspection=%s", path, len(points), np.count_nonzero(selected), inspection)
     return len(points), int(np.count_nonzero(selected))
 
@@ -845,6 +957,7 @@ def save_fused_cloud(path: Path, frame: dict, calibration: dict,
              "target_image_size": list(frame["color"].shape[1::-1]),
              "z_range_m": [frame["z_min"], frame["z_max"]], "color_source": "original Color image RGB"}
     stats.update(calibration_version=calibration.get('calibration_version'),
+                 source_ray_correction=calibration.get('source_ray_correction'),
                  calibration_warning=calibration.get('calibration_warning', ''),
                  plane_validation=plane_status(frame, calibration))
     metadata.write_text(json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -866,13 +979,13 @@ def fused_color_view(frame: dict, calibration: dict, color_cal=DEFAULT_COLOR_CAL
 def board_error_view(frame, calibration, color_cal=DEFAULT_COLOR_CAL):
     """Color-view diagnostic only; never changes RGB export or calibration input."""
     image = frame['color'].copy()
-    plane, target = frame.get('source_plane'), frame.get('target_plane')
+    plane, target = displayed_board(frame), frame.get('target_plane')
     if plane is None or target is None:
         return image
     check_geometry(frame, calibration)
     R, t = np.asarray(calibration['R']), np.asarray(calibration['t'])
     points = frame['xyz_mm'].reshape(*frame['pcd_shape'], 3)[plane['mask']]*.001
-    points = points@R.T+t
+    points = corrected_points(points, calibration)@R.T+t
     K, dist = camera(color_cal)
     uv = cv2.projectPoints(points, np.zeros(3), np.zeros(3), K, dist)[0].reshape(-1,2)
     finite = np.isfinite(uv).all(1) & (points[:,2] > 0)
@@ -882,10 +995,14 @@ def board_error_view(frame, calibration, color_cal=DEFAULT_COLOR_CAL):
     colors = np.tile([0, 220, 0], (len(points),1))
     colors[error >= .010] = [0, 180, 255]
     colors[error >= .020] = [0, 0, 255]
+    # A low point-plane error can still land in the background. Show it explicitly.
+    outside = np.array([cv2.pointPolygonTest(np.asarray(target['region'], np.float32),
+                                           (float(u), float(v)), False) < 0 for u, v in uv])
+    colors[outside] = [255, 0, 255]
     image[uv[good,1], uv[good,0]] = colors[good]
     polygon = np.rint(target['region']).astype('int32')
     cv2.polylines(image, [polygon], True, (255,255,255), 1)
-    cv2.putText(image, 'Point-plane: green <10 / amber 10-20 / red >=20 mm', (8,20),
+    cv2.putText(image, 'Plane mm: green <10 / amber 10-20 / red >=20; magenta: outside board', (8,20),
                 cv2.FONT_HERSHEY_SIMPLEX, .4, (255,255,255), 1)
     return image
 

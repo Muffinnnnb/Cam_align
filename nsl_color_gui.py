@@ -11,7 +11,7 @@ from PySide6.QtGui import QAction, QColor, QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFileDialog
 
-from app_logging import LOG_PATH, get_logger, install_exception_hook
+from app_logging import get_log_path, get_logger, install_exception_hook
 from app_paths import calibration_input, output_dir
 from fuse_color_pointcloud import DEFAULT_CAPTURE_ROOT, DEFAULT_COLOR_CAL, capture_pairs, load_camera, load_rt
 from nsl_geometry import GEOMETRY_MODES, GEOMETRY_LABELS, rt_geometry, fusion_block_reason
@@ -19,7 +19,7 @@ from nsl_color_calibration import (
     RESULT_PATH, aligned_depth, analyze_pair, calibrate_nsl_color,
     color_plane_view, pointcloud_view, projection_view, save_fused_cloud,
     save_projection, save_source_cloud, select_plane_for_rt,
-    fused_color_view, plane_status, board_error_view,
+    fused_color_view, plane_status, board_error_view, displayed_board,
     PLANE_CANDIDATE_RGB,
 )
 
@@ -141,7 +141,7 @@ class Controller(QObject):
         self.window.captureRootEdit.setText(str(self.capture_root))
         self.window.colorCalEdit.setText(str(self.color_cal))
         self.window.fileLabel.setText(
-            "하늘색=평면 후보 / 빨강=평면쌍 없음\nRT 학습 이력·일치도는 색과 별도 / 회색=미검사"
+            "초록=보드 대응 / 파랑=부분 대응 / 회색=미확인·보류\n빨강=검출 없음 / 대응 확인 ≠ 정합 정확도 합격"
         )
         self.window.zMinSpinBox.setValue(self.z_min)
         self.window.zMaxSpinBox.setValue(self.z_max)
@@ -249,7 +249,7 @@ class Controller(QObject):
         return Path(self.settings.value(f'rt/{self.geometry}', str(output_dir('calibration') / name)))
 
     def point_plane_result_path(self):
-        return output_dir('calibration') / f'nsl_to_color_{self.geometry}_auto_v6_rt.json'
+        return output_dir('calibration') / f'nsl_to_color_{self.geometry}_auto_v8_rt.json'
 
     def read_range(self):
         z_min = self.window.zMinSpinBox.value()
@@ -373,11 +373,12 @@ class Controller(QObject):
             return
         background, foreground = {
             "failed": ("#ffd6d6", "#8b0000"), "pending": ("#eeeeee", "#555555"),
-            "candidate": ("#dceeff", "#125a85"),
+            "candidate": ("#e0f4df", "#166534"),
+            "partial": ("#dceefa", "#005a9c"), "unconfirmed": ("#eeeeee", "#555555"),
         }[status["state"]]
         items[0].setBackground(QColor(background))
         items[0].setForeground(QColor(foreground))
-        items[0].setToolTip(status["message"] + "\n현재 RT는 독립적인 정답이 아닙니다. 검출색은 RT 사용/제외로 바뀌지 않습니다.")
+        items[0].setToolTip(status["message"] + "\n현재 RT는 정답이 아닙니다. 보드 대응과 RT 학습 사용/제외는 별개입니다.")
 
     def mark_item(self, stamp, frame):
         self.apply_status(stamp, plane_status(frame, self.result))
@@ -431,7 +432,9 @@ class Controller(QObject):
             self.window.activeModelLabel.setText(
                 f"적용 중: {GEOMETRY_LABELS[GEOMETRY_MODES.index(self.geometry)]} | RT: {self.result_path.name if self.result else '없음'}"
                 + (' | 독립 정확도 미검증' if self.result else '')
-                + (' | NF 비교 전용' if nf and not blocked else ''))
+                + (' | NF 비교 전용' if nf and not blocked else '')
+                + (f" | NSL 독립 치수 보정 ×{self.result['source_ray_correction']['scale']:.5f}"
+                   if self.result and self.result.get('source_ray_correction') else ''))
             self.window.activeModelLabel.setStyleSheet('font-weight:bold;color:' + ('#b00020' if nf else '#005a9c'))
             view_mode = self.window.viewComboBox.currentIndex()
             rgb_view = view_mode == 1 and can_fuse
@@ -445,12 +448,13 @@ class Controller(QObject):
                 )
                 self.window.sourceGroup.setTitle("검사용 거리 색상 투영 — RGB PLY 색상이 아님")
             else:
-                displayed_plane = frame["source_plane"]
-                plane_color = PLANE_CANDIDATE_RGB[::-1]
+                displayed_plane = displayed_board(frame)
+                partial = (frame.get('board_identity') or {}).get('state') == 'partial'
+                plane_color = (255, 190, 0) if partial else PLANE_CANDIDATE_RGB[::-1]
                 if displayed_plane is None:
-                    title = "NSL 독립 검출 — 적합한 평면 후보 없음"
+                    title = "NSL — 보드 대응 미확인 / 모호한 후보는 선택 보류"
                 else:
-                    title = "NSL 독립 평면 후보 (하늘색 · RT 학습 여부와 무관)"
+                    title = "NSL 보드 부분 대응 (파랑 · RT 학습 적합성 별도)" if partial else "NSL 보드 대응 (초록 · 정합 정확도 합격 아님)"
                 source_view = pointcloud_view(
                     frame["xyz_mm"], frame["pcd_shape"],
                     displayed_plane, self.z_min, self.z_max,
@@ -463,7 +467,7 @@ class Controller(QObject):
             )
             if view_mode == 3 and can_fuse:
                 target_view = board_error_view(frame, self.result, self.color_cal)
-            self.window.targetGroup.setTitle('Color 시점 점-평면 잔차 (정답 검증 아님)' if view_mode == 3 and can_fuse else 'RealSense Color 체스보드 평면')
+            self.window.targetGroup.setTitle('Color 점-평면 잔차 / 자홍=보드 밖 투영 (정답 검증 아님)' if view_mode == 3 and can_fuse else 'RealSense Color 체스보드 평면')
             self.set_image(self.window.sourceImageLabel, source_view)
             self.set_image(self.window.targetImageLabel, target_view)
             self.current_stamp = stamp
@@ -489,13 +493,19 @@ class Controller(QObject):
         return plane_status(frame, self.result)['message']
 
     def rt_status_text(self, frame):
+        if identity := frame.get('board_identity'):
+            e = identity.get('evidence')
+            return (f"보드 대응 검사: 유한 보드 RMS {e['finite_board_rms_m']*1000:.1f} mm / "
+                    f"면적 커버 {e['coverage']:.0%} / {identity['basis']}" if e else identity['basis'])
         if self.result is None:
             return 'RT 정합: 미검사 (RT 없음). 평면 검출과 정합 검사는 별개입니다.'
         if 'rt_normal_error_deg' not in frame:
             return 'RT 정합: 평면쌍 없음 — 검사 불가'
         return (f"추정 RT와의 일치도 (정답 검증 아님): 법선 {frame['rt_normal_error_deg']:.2f}° / "
                 f"평면 오프셋 차이 {1000*frame['rt_plane_error_m']:.1f} mm / 면적 커버 {frame.get('projection_coverage',0):.0%}"
-                f" / 전체 점 RMS {1000*frame.get('rt_point_rms_m', float('nan')):.1f} mm")
+                f" / 전체 점 RMS {1000*frame.get('rt_point_rms_m', float('nan')):.1f} mm"
+                f" / 보드 밖 {frame.get('projection_outside', 0):.1%}"
+                f" / 경계 평균 {frame.get('boundary_mean_px', float('nan')):.1f} px")
 
     @staticmethod
     def one_plane_text(name, plane):
@@ -527,13 +537,25 @@ class Controller(QObject):
                     "미리보기: NSL 시점 / RGB PLY의 XYZ: Color 카메라 좌표계, 미터\n"
                     "평면 판정과 RGB 저장은 별개입니다. 검정 영역은 색을 가져올 수 없는 점입니다.\n"
                     f"인접 점의 표면 가림 처리: {frame.get('projection_stats', {}).get('surface_occluded_points', 0):,}점 제외.\n"
-                    "검정=시야 밖/가림/유효점 없음. 원본 점군 기하 또는 RT가 틀리면 색도 틀립니다.")
+                    "검정=시야 밖/가림/유효점 없음. 보드 밖 점을 숨기거나 RGB를 보드 안으로 당기지 않습니다.")
+        if identity := frame.get('board_identity'):
+            text = self.one_plane_text('NSL 대응 후보 (보정 전 원본 기하)', displayed_board(frame))
+            text += '\n' + self.one_plane_text('Color', frame['target_plane'])
+            text += '\n' + identity.get('reason', identity['basis'])
+            if e := identity.get('evidence'):
+                text += (f"\n보드 내부 점 {e['overlap']:.1%} / 유한 보드 근접 점 {e['near_fraction']:.1%}. "
+                         f"물체 대응 허용폭 {e['identity_tolerance_m']*1000:.1f} mm = 보드 대각선의 15% (정밀도 기준 아님).")
+            text += '\n' + identity['basis'] + '. 표시 후보는 RT 재학습/NSL 치수 보정에 피드백하지 않습니다.'
+            return text
         plane = frame["source_plane"]
         text = (
             self.one_plane_text("NSL (RT 독립 검출점)", plane)
             + "\n"
             + self.one_plane_text("Color", frame["target_plane"])
         )
+        if 'corrected_source_size_m' in frame:
+            a, b = np.array(frame['corrected_source_size_m'])*1000
+            text += f"\nNSL 독립 각도 보정 후 같은 지지점 치수: {a:.1f}×{b:.1f} mm (원본 파일 보존 / NSL PLY에도 적용)"
         if self.result and "rt_normal_error_deg" in frame:
             text += (
                 f"\nAfter RT: normal error="
@@ -542,9 +564,11 @@ class Controller(QObject):
             )
         if "projection_overlap" in frame:
             text += (
-                f"\nColor checkerboard overlap="
+                f"\nColor 실제 보드 안 투영 (여유 0%)="
                 f"{frame['projection_overlap'] * 100:.1f}% / 실측 셀 커버 {frame.get('projection_coverage', 0):.0%} / 셀 IoU {frame.get('projection_iou', 0):.0%}"
             )
+            if 'boundary_mean_px' in frame:
+                text += f"\n양방향 경계 오차: 평균 {frame['boundary_mean_px']:.2f} px / P90 {frame['boundary_p90_px']:.2f} px. 자홍색 점=보드 밖 투영."
         elif "projection_overlap_best" in frame:
             text += (
                 f"\nBest Color checkerboard overlap="
@@ -674,24 +698,24 @@ class Controller(QObject):
             self.apply_status(stamp, status)
         self.show_matrix()
         counts = {state: sum(s["state"] == state for s in statuses.values())
-                  for state in ("failed", "candidate")}
+                  for state in ("failed", "candidate", "partial", "unconfirmed")}
         used = sum(s.get('training') == 'used' for s in statuses.values())
         excluded = sum(s.get('training') == 'excluded' for s in statuses.values())
         action = "RT 유지 · 검사 완료" if self.worker.inspect_only else "RT 계산 + 검사 완료"
         self.window.calibrationStatus.setText(
-            f"{action}: 검출 후보 {counts['candidate']} / 평면쌍 없음 {counts['failed']} | RT 이력: 사용 {used} / 제외 {excluded}")
+            f"{action}: 대응 {counts['candidate']} / 부분 {counts['partial']} / 보류 {counts['unconfirmed']} / 검출 없음 {counts['failed']} | RT 사용 {used} / 제외 {excluded}")
         LOGGER.info("%s counts=%s", action, counts)
 
     def calibration_failed(self, error):
         self.window.calibrationStatus.setText(
-            f"실패: {error} / 로그: {LOG_PATH}"
+            f"실패: {error} / 로그: {get_log_path()}"
         )
 
     def calibration_finished(self):
         self.set_busy(False)
         self.window.progressBar.setVisible(False)
         self.worker_thread = self.worker = None
-        self.window.statusbar.showMessage(f"계산 종료 / 로그: {LOG_PATH}")
+        self.window.statusbar.showMessage(f"계산 종료 / 로그: {get_log_path()}")
         self.refresh_view()
         self.update_controls()
 
@@ -725,6 +749,13 @@ class Controller(QObject):
             text += '\n주의: 구버전 RT는 전체 보드 크기·면적 검증 없이 계산됨. 원본 점군 기하 확인 후 재계산 필요.'
         if self.geometry == 'wf_range':
             text += '\nWF는 제조사 표 기반 복원 모델이며 개별 장비 실측 내부 보정값은 아닙니다. 원본 PCD는 변경하지 않습니다.'
+        if correction := self.result.get('source_ray_correction'):
+            text += (f"\n보드 기반 추정 광선 각도 ×{correction['scale']:.6f} → 위 RT 적용 (원본 거리 보존)."
+                     " RT만 따로 적용하면 동일 결과가 나오지 않습니다. 공장 내부 보정값이 아닙니다.")
+            audit = self.result.get('nsl_dimension_audit', {})
+            if audit.get('applied'):
+                text += (f"\nNSL 자체 치수 검사 {audit['eligible_frames']}장 (RT/RGB 미사용): "
+                         f"분리 검증 치수 오차 {audit['heldout_before_mae_mm']:.1f} → {audit['heldout_after_mae_mm']:.1f} mm")
         if self.result.get('calibration_warning'):
             warning = self.result['calibration_warning']
             # Old saved results describe the retired learning-membership colors.
@@ -740,8 +771,13 @@ class Controller(QObject):
             text += f"\n4분할 교차검증 {v['evaluated']}개 (새 촬영 검증 아님): 점-평면 중앙값 {v['point_rms_median_mm']:.1f}mm / 중심 {v['center_median_mm']:.1f}mm" if v.get('evaluated') else '\n교차검증 결과 없음'
             if v.get('evaluated'):
                 text += f" / P90 {v['point_rms_p90_mm']:.1f}mm, {v['center_p90_mm']:.1f}mm"
+            if 'boundary_mean_px_median' in v:
+                text += (f"\n분리 검증 경계 오차 중앙값: {v['baseline_boundary_mean_px_median']:.1f} → {v['boundary_mean_px_median']:.1f} px"
+                         f" / 보드 밖 투영: {v['baseline_outside_fraction_median']:.1%} → {v['outside_fraction_median']:.1%}")
             if self.result.get('calibration_version', 0) >= 6:
-                text += '\n시간 구간 분리 검증. RANSAC+LM: 고정 후보 대응·점-평면·판 범위 이탈. 부분 중심 강제 일치 없음.'
+                objective = ('점-평면·양방향 영상 경계' if self.result.get('calibration_version', 0) >= 7
+                             else '점-평면·판 범위 이탈')
+                text += f'\n시간 구간 분리 검증. RANSAC+LM: 고정 후보 대응·{objective}. 부분 중심 강제 일치 없음.'
                 text += '\n20mm는 잠정 정합 허용치이며 장비 실측 신뢰한계가 아닙니다. 학습 사용 ≠ 검출/정합 정확도 보증.'
             else:
                 text += '\n구버전: 셀 평균 RMS <20mm + 중심 <60mm (장비 실측 신뢰한계 아님). 새 검출/계산 방식으로 재계산 권장.'
@@ -777,6 +813,7 @@ class Controller(QObject):
             total, selected = save_source_cloud(
                 Path(path), frame,
                 include_intensity=self.window.intensityCheckBox.isChecked(),
+                calibration=self.result,
             )
             self.window.statusbar.showMessage(
                 f"저장 완료: {total:,} points / 평면 {selected:,} points — {path}"

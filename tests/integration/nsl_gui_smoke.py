@@ -18,6 +18,7 @@ from app_paths import APP_DIR, output_dir
 from fuse_color_pointcloud import DEFAULT_CAPTURE_ROOT
 from nsl_color_gui import Controller
 from nsl_color_calibration import project_to_color
+from nsl_geometry import corrected_points
 
 
 def main():
@@ -55,8 +56,10 @@ def main():
     used=set(c.result['ransac_inlier_frames'])
     history_used={n for n,s in c.statuses.items() if s['training']=='used'}
     assert history_used==used and len(used)>0
-    assert all(s['state'] in ('candidate','failed') for s in c.statuses.values())
-    assert sum(s['state']=='candidate' for s in c.statuses.values())==66
+    assert all(s['state'] in ('candidate','partial','unconfirmed','failed') for s in c.statuses.values())
+    states={s:sum(v['state']==s for v in c.statuses.values()) for s in ('candidate','partial','unconfirmed','failed')}
+    assert states['candidate']>0 and states['unconfirmed']>0
+    assert len(c.result['board_identity_models'])==4
     assert len(c.statuses)==76
     assert c.window.inputGroup.isEnabled() and c.window.calibrateButton.isEnabled()
     stamp='20260922_093209_224'
@@ -64,7 +67,7 @@ def main():
     f=c.frame(stamp)
     assert f['rt_inlier']==(stamp in used)
     assert not f.get('manual_roi')
-    assert 'RT 학습 여부와 무관' in c.window.sourceGroup.title()
+    assert '보드 대응' in c.window.sourceGroup.title()
     app.processEvents();c.window.grab().save(str(out/'automatic_planes.png'))
     points,rgb,_,u,v,stats,indices=project_to_color(f,c.result,c.color_cal,return_indices=True)
     np.testing.assert_array_equal(rgb,f['color'][v,u,::-1])
@@ -98,10 +101,23 @@ def main():
     issue='20260922_094624_361'
     c.window.fileList.setCurrentItem(c.window.fileList.findItems(issue,Qt.MatchExactly)[0])
     assert c.statuses[issue]['state']=='candidate'
-    assert c.statuses[issue]['training']=='excluded'
-    assert c.window.fileList.currentItem().background().color().name()=='#dceeff'
-    assert c.frame(issue)['rt_point_rms_m']>.020  # Do not hide the actual disagreement.
+    assert c.statuses[issue]['training']==('used' if issue in used else 'excluded')
+    assert c.window.fileList.currentItem().background().color().name()=='#e0f4df'
+    # Display the actual residual; a better calibration may legitimately reduce it.
+    checked=c.frame(issue);plane=checked['source_plane'];target=checked['target_plane']
+    raw=checked['xyz_mm'].reshape(*checked['pcd_shape'],3)[plane['mask']]*.001
+    transformed=corrected_points(raw,c.result)@np.asarray(c.result['R']).T+c.result['t']
+    expected=np.sqrt(np.mean((transformed@target['normal']-target['h'])**2))
+    assert np.isclose(checked['rt_point_rms_m'],expected)
     app.processEvents();c.window.grab().save(str(out/'reported_frame.png'))
+    issue='20260922_095036_917'
+    c.window.fileList.setCurrentItem(c.window.fileList.findItems(issue,Qt.MatchExactly)[0])
+    checked=c.frame(issue)
+    assert checked['board_identity']['state']=='ambiguous'
+    assert checked['board_identity']['plane'] is None
+    assert '제외하고' in checked['board_identity']['basis']
+    assert c.statuses[issue]['state']=='unconfirmed'
+    app.processEvents();c.window.grab().save(str(out/'ambiguous_board.png'))
     # Menus still support explicitly loading an existing RT.
     with patch('nsl_color_gui.QFileDialog.getOpenFileName',return_value=(str(rt_path),'')):
         c.window.loadRtButton.trigger()
@@ -114,7 +130,7 @@ def main():
     c.window.applyWfButton.click()
     assert c.geometry=='wf_range' and c.result_path==rt_path
     assert all(sha256(p.read_bytes()).hexdigest()==h for p,h in hashes.items())
-    report={'input':len(c.pairs),'used':len(used),'detection_candidates':66,'orange_detection_states':0,
+    report={'input':len(c.pairs),'used':len(used),'association_states':states,
             'training_history_matches_rt':True,'rgb_exact_points':len(saved),
             'event_loop_ticks':len(ticks),'no_manual_controls':True,'old_rt_and_annotations_preserved':True}
     (out/'report.json').write_text(json.dumps(report,indent=2),'utf-8')

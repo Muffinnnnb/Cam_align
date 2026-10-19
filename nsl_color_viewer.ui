@@ -81,13 +81,13 @@
          </layout>
         </item>
         <item><widget class="QComboBox" name="viewComboBox">
-         <item><property name="text"><string>NSL 독립 평면 후보 (하늘색) / RT 이력은 별도 표시</string></property></item>
+         <item><property name="text"><string>보드 대응: 초록=대응 / 파랑=부분 / 미확인 시 표시 보류</string></property></item>
          <item><property name="text"><string>실제 Color RGB 융합 (PLY와 동일 색상)</string></property></item>
          <item><property name="text"><string>검사용 거리 색상 투영 (RGB 아님)</string></property></item>
-         <item><property name="text"><string>추정 RT의 점-평면 잔차: 초록 &lt;10 / 노랑 10~20 / 빨강 ≥20 mm (합격 판정 아님)</string></property></item>
+         <item><property name="text"><string>점-평면 잔차: 초록 &lt;10 / 노랑 10~20 / 빨강 ≥20 mm · 자홍=보드 밖 투영</string></property></item>
         </widget></item>
         <item><widget class="QLabel" name="geometryNoticeLabel">
-         <property name="text"><string>하늘색=NSL 독립 평면 후보. RT 학습 이력과 변환 후 잔차는 별도입니다. 낮은 잔차는 절대 정합 정확도를 보증하지 않습니다.</string></property>
+         <property name="text"><string>물체 대응과 정합 정확도는 별개입니다. 모호한 후보를 몸통 등으로 대체하지 않습니다. 카메라·센서 배치를 바꾸면 RT를 재계산하세요.</string></property>
          <property name="wordWrap"><bool>true</bool></property>
         </widget></item>
         <item><widget class="QPushButton" name="applyWfButton"><property name="text"><string>WF 거리맵 복원 + 전용 RT 적용 (원본 보존)</string></property><property name="visible"><bool>false</bool></property></widget></item>
