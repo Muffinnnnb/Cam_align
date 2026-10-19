@@ -1,0 +1,119 @@
+Cam_align — general-purpose metric-neighborhood fallback
+2026-10-20 / reference runtime e4b0db3 (v10)
+
+Scope and decision
+------------------
+Add a source-only 3D neighborhood fallback when the existing image-grid
+detector has no structurally eligible candidate. Do not replace successful
+hypotheses or change support, identity, RANSAC or LM acceptance thresholds.
+No filename exceptions, fixed image-location ROI, RGB/RT-guided point trimming,
+checkerboard-shaped missing-data rules, or presumed camera baseline is used.
+
+The capture generator writes Z into PCD intensity when true intensity is absent.
+The current recordings therefore cannot be treated as measured reflectance.
+An exploratory missing-pixel checkerboard recovery was NOT deployed: it depends
+on sensor amplitude settings and material reflectance, not generic XYZ geometry.
+
+Algorithm
+---------
+nsl_metric_support.py: metric_support(grid, quality_function)
+1. Use finite original XYZ in metres; create 10 mm voxel centroids for proposals.
+2. Estimate local covariance/normals within 40, 70 and 100 mm neighborhoods.
+3. Build a nearby-point graph using normal agreement, local curvature and
+   bilateral point-to-local-plane consistency. No reference RT is involved.
+4. Propose connected components. Refit final spatial support from original
+   measured XYZ via complete_support; voxel means never become exported points.
+5. Return only candidates passing ALL existing support_quality conditions.
+
+These are proposal scales suited to the configured 250 x 280 mm board, not
+sensor-calibrated noise bounds or universal values for arbitrary object sizes.
+The organized-grid completion and existing board-size assumptions remain.
+This is a bounded generality improvement, not an unstructured-cloud rewrite.
+
+Fresh actual-data regression
+----------------------------
+Re-read all 76 capture pairs from disk, regenerate candidates twice (fallback
+disabled/enabled), and use exact-input time-block-excluded v10 identity models.
+Matched: 69 -> 69 / 76 (90.789%). Partial: 7 -> 7, NOT counted as success.
+All ordered candidate masks, normals, offsets and board centers were identical.
+Original XYZ and active RT were unchanged. Thus this change adds no new RT
+training support and no change to RGB projection on these recordings.
+No new visual ground-truth annotation was created; this is a regression test,
+not evidence of 100% detection or zero real-world false positives.
+
+Active RT SHA256:
+93565cbefedeaa1aeddb36d562f46bda6a01191fb80461a9415c92c69519d384
+Active settings SHA256:
+5acf75c628a523a1661b7228af1eb4cb342e85ed298c7944044a76ce573b7ca7
+
+Synthetic geometry regression
+-----------------------------
+tests/integration/synthetic_board_audit.py:
+- 8 explicit scenarios plus 24 seeded random board scenarios, and 8 no-board
+  curved-foreground/background scenarios. Truth masks are scoring-only inputs.
+- Resolution 160x120/320x240; horizontal FOV 50-110 degrees; varied positions,
+  tilts, sample density, 2-9 mm axial noise and 5-40% random dropout.
+- A successful source detection has >=70% recall of visible measured board
+  points, >=95% purity, and unchanged structural eligibility. This is NOT the
+  real-data board-association metric and is never added to its denominator.
+- Source detection: 22/32 -> 28/32; regressions 0.
+- No-board scenes: no eligible candidates before or after (8/8).
+- All source XYZ preserved. Four synthetic board conditions still fail, due to
+  insufficient support or existing detection/selection limitations.
+- Parameterized synthetic tests share one renderer; they are not independent
+  hardware data and do not establish robustness to every camera/noise model.
+
+Automated verification
+-----------------------
+68 unit tests pass in local Python, including new metric pose/invalid/missing
+point tests and existing camera-intrinsics, PLY RGB, GUI-load and LM regressions.
+The first sandboxed run failed on temporary-directory permissions; the same
+tests passed outside the sandbox. No test criteria were relaxed to bypass it.
+HTML: existing seven scenes preserved, eighth scene and section appended.
+1280/375/320 px layouts, all scene controls and reduced motion checked; no JS
+errors, horizontal overflow or external resource requests. Screenshots inspected.
+
+Reproduction (from repository root, local Python with requirements installed)
+----------------------------------------------------------------------------
+python -m unittest discover -s tests/unit -v
+python tests/integration/synthetic_board_audit.py
+python tests/integration/metric_support_audit.py --capture-root <capture-folder>
+    --rt output/calibration/nsl_to_color_wf_range_auto_v10_rt.json
+
+Actual/synthetic machine-readable reports: output/validation/metric_support/
+Exploratory variants: output/validation/metric_regions_20261020/
+Private recordings, trial RTs and local reports remain excluded from GitHub.
+
+Additional joint-initialization trial — rejected
+-----------------------------------------------
+The prior supplemental 20 mm source-refit variant initially showed 71/76 with
+the OLD fixed v10 RT, but its recalibration failed a holdout. To investigate
+the initialization sensitivity without lowering gates, every one of the eight
+polished RANSAC consensuses was passed through the final plane+outline LM;
+the best joint consensus was selected, separately within each training fold.
+This was an experiment only, not an active-runtime change.
+
+The four folds completed (9/13/27/35 inliers), but the new association outcome
+was 69 matched, 6 partial and 1 unconfirmed. One previous matched frame was lost
+and one partial recovered. On the SAME 69 original matched source supports,
+using each model's time-block-excluded calibration, median errors changed:
+  point-plane RMS: 16.4529 -> 18.1066 mm
+  bidirectional boundary error: 9.2430 -> 12.9475 px
+  fraction outside board: 4.3802 -> 11.0279 percent
+This is a measurable regression, so neither the source refit nor multi-start
+RT change was deployed. Its trial RT is retained only in the ignored experiment
+directory; active v10 RT/settings hashes remain those listed above.
+Completing the solver and increasing training inliers (36 -> 39) was NOT used
+as proof of better correspondence or RGB alignment.
+
+Related primary references (principles, not claimed drop-in implementations)
+-------------------------------------------------------------------------
+https://pointclouds.org/documentation/tutorials/region_growing_segmentation.html
+https://pointclouds.org/documentation/tutorials/statistical_outlier.html
+
+Next acceptance requirement
+---------------------------
+The measured-data goal remains 100%, not achieved. Any future increase must
+preserve existing matches and pass held-out alignment checks without partial
+promotion. Other actual sensor layouts/RGB cameras remain untested because no
+such captures have been supplied; new intrinsics and RT calibration are required.

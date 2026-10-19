@@ -20,6 +20,7 @@ from nsl_geometry import geometry_spec, check_geometry, source_geometry_warning,
 from hashlib import sha256
 from nsl_plane_fit import complete_support, fit_point_planes, support_quality, cell_means
 from nsl_surface_support import range_support, paired_support
+from nsl_metric_support import metric_support
 from nsl_projection_fit import observation, outline_errors, refine_projection
 from nsl_dimensions import estimate_source_correction, measured_size
 from nsl_board_identity import identify_board, frame_fingerprint, IDENTITY_VERSION
@@ -217,6 +218,10 @@ def nsl_plane_candidates(xyz_mm: np.ndarray, shape: tuple[int, int],
     planes = complete_support(grid, unique, plane_quality)
     planes += range_support(grid, plane_quality)
     planes += paired_support(grid, planes, plane_quality)
+    # Preserve successful hypotheses and RT inputs. Only use this alternative
+    # when image-grid proposals cannot supply any structurally usable board.
+    if not any(support_quality(grid[p['mask']], p)['eligible'] for p in planes):
+        planes += metric_support(grid, plane_quality)
     return sorted(planes, key=lambda p: p['score'])
 
 
