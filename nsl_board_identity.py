@@ -4,43 +4,11 @@ Only whole, independently generated source hypotheses are compared. No points
 are trimmed with RT, no expected sensor baseline, image position or pose is used.
 """
 from hashlib import sha256
-import cv2
 import numpy as np
-from scipy.ndimage import distance_transform_edt
 from nsl_geometry import corrected_points
-from nsl_plane_fit import cell_means, fit_plane
+from nsl_surface_support import same_surface
 
-IDENTITY_VERSION = 2
-
-
-def same_surface(grid, first, second):
-    """Source-only evidence that two masks describe pieces of one finite surface.
-
-    No union is exported or fitted to RT. Require actual neighboring samples,
-    continuous 3D depth and a compact common plane, not merely overlapping boxes.
-    30 mm is the existing source support gate, not an RT precision guarantee.
-    """
-    a, b = np.asarray(first['mask'], bool), np.asarray(second['mask'], bool)
-    minimum_links = max(12, int(.02*min(a.sum(), b.sum())))
-    for left, right in ((a, b), (b, a)):
-        distance, nearest = distance_transform_edt(~left, return_indices=True)
-        boundary = right & ~left & (distance <= 3)
-        if boundary.sum() < minimum_links:
-            return False
-        gaps = np.linalg.norm(grid[boundary]-grid[tuple(nearest[:, boundary])], axis=1)
-        if not np.isfinite(gaps).all() or np.median(gaps) > .030:
-            return False
-    points = grid[a | b]
-    if not np.isfinite(points).all():
-        return False
-    center, normal, offset = fit_plane(cell_means(points))
-    error = abs(points@normal-offset)
-    if np.sqrt(np.mean(error**2)) > .020 or np.percentile(error, 90) > .030:
-        return False
-    # Extents are rotation invariant and cannot grow across an entire body.
-    axes = np.linalg.svd(points-center, full_matrices=False)[2][:2]
-    size = np.sort(cv2.minAreaRect(((points-center)@axes.T).astype('float32'))[1])
-    return bool(np.all(size <= np.array([.25, .28])*1.40))
+IDENTITY_VERSION = 3
 
 
 def frame_fingerprint(frame):
@@ -125,6 +93,20 @@ def identify_board(frame, calibration, K, distortion):
         result.update(state='unconfirmed', reason='보드와 대응하는 후보 없음: RT/촬영 동기/가림 또는 검출 누락 확인')
         return result
     plausible.sort(key=lambda row: row[0])
+    # A slightly quieter strip must not outrank an independently complete
+    # hypothesis of the SAME object. Keep the original plausibility gates and
+    # score margin; unrelated surfaces still go through ambiguity rejection.
+    best_score, _, best, _ = plausible[0]
+    for position, (score, _, candidate, evidence) in enumerate(plausible):
+        if score > best_score+.10:
+            break
+        if not candidate.get('support_quality', {}).get('eligible', False) or evidence['coverage'] < .60:
+            continue
+        a, b = np.asarray(best['mask'], bool), np.asarray(candidate['mask'], bool)
+        overlap = np.count_nonzero(a & b)/max(1, np.count_nonzero(a | b))
+        if overlap >= .20 or same_surface(grid, best, candidate):
+            plausible.insert(0, plausible.pop(position))
+            break
     _, index, plane, evidence = plausible[0]
     compatible = []
     for score, other_index, other, other_evidence in plausible[1:]:

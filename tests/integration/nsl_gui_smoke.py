@@ -46,7 +46,7 @@ def main():
     errors=[];ticks=[]
     timer=QTimer();timer.timeout.connect(lambda:ticks.append(time.monotonic()));timer.start(100)
     c.run_calibration();c.worker.failed.connect(errors.append)
-    deadline=time.monotonic()+360
+    deadline=time.monotonic()+900
     while c.worker_thread is not None and time.monotonic()<deadline:
         app.processEvents();time.sleep(.01)
     timer.stop()
@@ -58,7 +58,8 @@ def main():
     assert history_used==used and len(used)>0
     assert all(s['state'] in ('candidate','partial','unconfirmed','failed') for s in c.statuses.values())
     states={s:sum(v['state']==s for v in c.statuses.values()) for s in ('candidate','partial','unconfirmed','failed')}
-    assert states['candidate']>0 and states['unconfirmed']>0
+    assert states['candidate'] >= 69, '90% requires >=69/76 matched boards; partials do NOT count'
+    assert states['partial'] > 0, 'Retain honest incomplete detections'
     assert len(c.result['board_identity_models'])==4
     assert len(c.statuses)==76
     assert c.window.inputGroup.isEnabled() and c.window.calibrateButton.isEnabled()
@@ -114,7 +115,7 @@ def main():
     c.window.fileList.setCurrentItem(c.window.fileList.findItems(issue,Qt.MatchExactly)[0])
     checked=c.frame(issue)
     assert checked['board_identity']['state']=='partial'
-    assert checked['board_identity']['compatible_fragments']
+    assert not checked['board_identity']['plane']['support_quality']['eligible']
     assert checked['board_identity']['plane'] is not checked['source_plane']
     assert '제외하고' in checked['board_identity']['basis']
     assert c.statuses[issue]['state']=='partial'

@@ -249,7 +249,7 @@ class Controller(QObject):
         return Path(self.settings.value(f'rt/{self.geometry}', str(output_dir('calibration') / name)))
 
     def point_plane_result_path(self):
-        return output_dir('calibration') / f'nsl_to_color_{self.geometry}_auto_v9_rt.json'
+        return output_dir('calibration') / f'nsl_to_color_{self.geometry}_auto_v10_rt.json'
 
     def read_range(self):
         z_min = self.window.zMinSpinBox.value()
@@ -702,9 +702,11 @@ class Controller(QObject):
         used = sum(s.get('training') == 'used' for s in statuses.values())
         excluded = sum(s.get('training') == 'excluded' for s in statuses.values())
         action = "RT 유지 · 검사 완료" if self.worker.inspect_only else "RT 계산 + 검사 완료"
+        total = len(statuses)
+        rate = counts['candidate']/total if total else 0.
         self.window.calibrationStatus.setText(
-            f"{action}: 대응 {counts['candidate']} / 부분 {counts['partial']} / 보류 {counts['unconfirmed']} / 검출 없음 {counts['failed']} | RT 사용 {used} / 제외 {excluded}")
-        LOGGER.info("%s counts=%s", action, counts)
+            f"{action}: 보드 대응 {counts['candidate']}/{total} ({rate:.1%}, 부분 제외) / 부분 {counts['partial']} / 보류 {counts['unconfirmed']} / 검출 없음 {counts['failed']} | RT 사용 {used} / 제외 {excluded}")
+        LOGGER.info("%s matched_rate=%.6f denominator=%s partial_excluded=True counts=%s", action, rate, total, counts)
 
     def calibration_failed(self, error):
         self.window.calibrationStatus.setText(

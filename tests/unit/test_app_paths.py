@@ -85,7 +85,7 @@ class OutputPathTests(unittest.TestCase):
         self.assertEqual(controller.geometry, 'wf_range')
         self.assertEqual(controller.result_path, Path(controller.settings.value('rt/wf_range',
                          str(paths.OUTPUT_DIR / "calibration" / "nsl_to_color_wf_rt.json"))))
-        self.assertEqual(controller.point_plane_result_path(), paths.OUTPUT_DIR / 'calibration' / 'nsl_to_color_wf_range_auto_v9_rt.json')
+        self.assertEqual(controller.point_plane_result_path(), paths.OUTPUT_DIR / 'calibration' / 'nsl_to_color_wf_range_auto_v10_rt.json')
         self.assertEqual(Path(controller.settings.fileName()), self.directory / "settings.ini")
         methods = ((controller.save_source, "pointclouds/nsl_wf_range_path_test.ply"),
                    (controller.save_fused, "pointclouds/nsl_color_wf_range_path_test.ply"),

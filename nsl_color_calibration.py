@@ -19,6 +19,7 @@ from fuse_color_pointcloud import (
 from nsl_geometry import geometry_spec, check_geometry, source_geometry_warning, detected_lens, fusion_block_reason, corrected_points, ray_scale
 from hashlib import sha256
 from nsl_plane_fit import complete_support, fit_point_planes, support_quality, cell_means
+from nsl_surface_support import range_support, paired_support
 from nsl_projection_fit import observation, outline_errors, refine_projection
 from nsl_dimensions import estimate_source_correction, measured_size
 from nsl_board_identity import identify_board, frame_fingerprint, IDENTITY_VERSION
@@ -212,7 +213,11 @@ def nsl_plane_candidates(xyz_mm: np.ndarray, shape: tuple[int, int],
         unique.append(plane)
         if len(unique) == 24:
             break
-    return complete_support(np.where(valid[..., None], grid, np.nan), unique, plane_quality)
+    grid = np.where(valid[..., None], grid, np.nan)
+    planes = complete_support(grid, unique, plane_quality)
+    planes += range_support(grid, plane_quality)
+    planes += paired_support(grid, planes, plane_quality)
+    return sorted(planes, key=lambda p: p['score'])
 
 
 def nsl_plane(xyz_mm: np.ndarray, shape: tuple[int, int],
@@ -614,7 +619,7 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'from': 'nsl_pointcloud', 'to': 'color', 'translation_unit': 'm',
         'source_type': 'NSL organized point cloud', 'target_type': 'RealSense color',
         'square_size_m': .03, 'board_size_m': list(BOARD_M),
-        'source_geometry': geometry, 'calibration_version': 9,
+        'source_geometry': geometry, 'calibration_version': 10,
         'capture_root': str(Path(capture_root).resolve()),
         'target_intrinsic_source': str(Path(color_cal)/'Intrinsic.txt'),
         'target_distortion_source': str(Path(color_cal)/'Distortion.txt'),
@@ -708,12 +713,19 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
     current['board_identity_version'] = IDENTITY_VERSION
     current['board_identity_policy'] = ('Fixed source hypotheses associated in metric board coordinates; '
         'known frames use time-block-excluded models; source-only surface continuity distinguishes complementary fragments; '
-        'no point merging, RT-based point trimming or candidate feedback into RT fitting.')
+        'source-only range components and independent pair supports refitted before RT; '
+        'prefer complete hypotheses of the same object; no RT-based point trimming or candidate feedback into RT fitting.')
     current['final_validated_frames'] = []
     for frame in frames.values():
         select_plane_for_rt(frame, current, color_cal)
         if frame.get('plane_valid'):
             current['final_validated_frames'].append(frame['timestamp'])
+    states = [f['board_identity']['state'] for f in frames.values()]
+    current['board_association_summary'] = {
+        'denominator': len(states), 'matched': states.count('matched'),
+        'partial': states.count('partial'), 'matched_rate': states.count('matched')/len(states),
+        'partial_included': False, 'metric': 'matched boards / all input frames; not RT precision',
+    }
     current['calibration_warning'] = (
         '검출 후보와 RT 학습 이력은 별도입니다. 시간 분리 검증도 내부 일관성 검사이며 절대 정확도 검증은 아닙니다. '
         'NSL 치수 보정은 RGB/RT와 독립 추정이며 개별 장비 공장 보정값이 아닙니다. '

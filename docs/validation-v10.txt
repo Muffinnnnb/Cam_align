@@ -1,0 +1,115 @@
+Cam_align v10 — corrected goal and full-board association audit
+Date: 2026-10-20 (Asia/Seoul)
+
+Correction
+----------
+The v9 completion report incorrectly used matched + partial as the numerator.
+The requested goal was matched boards >=90% of ALL captures. v9 achieved only
+57/76 = 75.0%, not 90%. The old partial-inclusive 70/76 figure did NOT meet it.
+
+Correct metric, unchanged acceptance gates
+-----------------------------------------
+Denominator: all 76 input capture pairs, including failed/unconfirmed/partial.
+Numerator: ONLY identity.state == matched.
+Partial boards are never counted as successes, even when their location is right.
+Matched retains the existing structural gates (size 70-140%, occupied support
+cells >=75%, rectangularity >=70%, edge support >=55%, quadrilateral support
+>=80%, normal stability <=15 degrees, flatness <=0.20) AND board-coordinate
+8x8 cell coverage >=60%, plus the existing plausibility/ambiguity tests.
+The requested 90% here is the fraction of matched CAPTURES, not a claim of
+90% per-board pixel recovery or complete removal of occlusions/missing points.
+
+                           v9             v10
+Matched boards             57             69
+Partial boards             13              7
+Unconfirmed                 6              0
+Matched / ALL              75.00%         90.79%
+
+All previous 57 matched frames remain matched; 12 additional boards match.
+The presence of a candidate on all 76 images is NOT 100% success.
+Seven partial frames remain below the original support criteria:
+20260922_093112_477, 20260922_094932_432, 20260922_095014_149,
+20260922_095031_526, 20260922_095036_917, 20260922_095122_942,
+20260922_095141_511.
+
+Implementation
+--------------
+1. Add source-only multiscale range-discontinuity connected components to the
+   RANSAC seeds. Median windows 5/9 and gradient levels propose masks only.
+   All final fits, quality tests and exports use original 3D samples.
+2. Refit independent pairs of physically continuous source supports. Do not
+   recursively merge through another fragment/hand. Retain invalid holes.
+   Apply the same complete_support and support_quality checks after refitting.
+3. Among plausible hypotheses of the SAME object, prefer a complete eligible
+   one within the existing ambiguity score margin instead of a quieter strip.
+   This does not set partial.support_quality.eligible to true or relabel it.
+4. Re-estimate NSL-only dimensional correction BEFORE RT, then grouped RANSAC
+   and linear-loss LM, including all four time-block-excluded models.
+5. UI, logs, saved RT metadata and integration regression explicitly exclude
+   partials. The 76-frame GUI regression fails unless matched >=69.
+
+No changes to support_quality thresholds or candidate_evidence gates.
+No fixed camera baseline, image position, manual ROI or timestamp-specific rule.
+No RGB-based point trimming, synthetic points or color-forcing board masks.
+Normals are fitted from measured XYZ, not boundary lines in a 2D image.
+
+Ablation on the same 76 captures (partials excluded)
+---------------------------------------------------
+v9 detector + v9 RT:                              57/76
+New support proposals/selection + v9 RT:           67/76
+New support proposals/selection + re-estimated RT:69/76
+
+Source-only dimensional estimation
+----------------------------------
+37 source-only eligible dimensional observations; no RGB or RT in this fit.
+Radial-angle scale: 0.9078062174772994, preserving measured radial range.
+Time-block dimension MAE before/after correction: 22.6405 -> 12.7210 mm.
+This is an empirical model correction, NOT per-unit factory calibration.
+RANSAC + LM ultimately uses 36 frames; 69 associations does NOT mean 69 RT inliers.
+
+Reproducible checks
+-------------------
+64 unit tests passed, including six new source-support/selection regressions.
+Actual Qt worker re-read all 76 original captures and recalculated the complete
+RT pipeline: 69 matched, 7 partial. Event loop: 2,424 timer ticks.
+Saved RGB PLY exactly matched 9,824 computed XYZ/RGB values. Click depth,
+plane export, intensity export and projection export also passed.
+The GUI regression preserved prior RTs, annotations and settings.
+
+Independent audit invocation re-read the same originals, compared v9 code from
+Git 34de5bf against the new detector, verified original XYZ preservation, and
+required a time-block-excluded model for every frame. All eight contact sheets
+(76 frames) were visually reviewed; no obvious body/knee selection was found
+among the matched boards. Visual inspection is qualitative, not pixel labels.
+
+Matching availability is not alignment precision
+------------------------------------------------
+Same FIXED 57 v9-matched supports evaluated with both time-block-excluded models:
+                              v9            v10
+Median point-plane RMS        17.6503 mm     15.8251 mm
+Median bidirectional boundary  9.4347 px       9.7706 px
+Median outside-board fraction  3.5529%         4.8069%
+
+The plane residual improves but boundary/outside metrics slightly worsen.
+Therefore this release does NOT claim that every RGB alignment metric improved.
+These are internal consistency/projection metrics, not physical ground truth.
+The current dataset informed algorithm development; cross-fitting is not a
+fully untouched external test. No real captures with a different camera/layout
+are available, so generalization remains unverified.
+
+Commands (local Python, matching cal/c intrinsics required)
+----------------------------------------------------------
+python -m unittest discover -s tests/unit -v
+
+Set CAM_ALIGN_CAPTURE_ROOT to the capture directory, then:
+python tests/integration/nsl_gui_smoke.py
+
+python tests/integration/full_board_audit.py --capture-root <capture-folder> --rt <v10-rt.json>
+
+The GUI regression requires the historical auto_v5 RT named in its source.
+The audit defaults to the preserved auto_v9 RT and Git 34de5bf as baseline.
+Local comparison images, frame-level JSON and generated RT are in output/;
+original captures, RTs and settings are excluded from GitHub.
+
+Existing algorithm-evolution.html is extended in place. Its v9 section is kept
+as historical evidence, explicitly marked as not meeting the requested goal.
