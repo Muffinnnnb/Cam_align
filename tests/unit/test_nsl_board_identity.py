@@ -5,7 +5,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-from nsl_board_identity import identify_board, association_model, frame_fingerprint
+from nsl_board_identity import identify_board, association_model, frame_fingerprint, same_surface
 import nsl_color_calibration as nc
 
 
@@ -33,6 +33,50 @@ def scene(rotation=(0., 0., 0.), translation=(0., 0., 0.), board_pose=(0., 0., 0
 
 
 class BoardIdentityTests(unittest.TestCase):
+    @staticmethod
+    def fragments():
+        rng = np.random.default_rng(14)
+        x, y = np.meshgrid(np.linspace(-.125, .125, 40), np.linspace(-.14, .14, 40))
+        grid = np.stack([x, y, 1.+rng.normal(0, .005, x.shape)], axis=-1)
+        a, b = x < -.003, x > .003
+        return grid, {'mask': a}, {'mask': b}
+
+    def test_complementary_patches_are_not_competing_objects(self):
+        grid, a, b = self.fragments()
+        self.assertFalse(np.any(a['mask'] & b['mask']))
+        self.assertTrue(same_surface(grid, a, b))
+        np.testing.assert_array_equal(a['mask'], grid[..., 0] < -.003)
+
+    def test_fragment_test_is_independent_of_rigid_pose(self):
+        grid, a, b = self.fragments()
+        for angle in (-1.2, -.4, .6, 1.2):
+            rotation = cv2.Rodrigues(np.array([.3, angle, -.2]))[0]
+            moved = grid@rotation.T+[2., -1., .7]
+            self.assertTrue(same_surface(moved, a, b))
+
+    def test_adjacent_parallel_layers_remain_distinct(self):
+        grid, a, b = self.fragments()
+        grid[b['mask'], 2] += .060
+        self.assertFalse(same_surface(grid, a, b))
+
+    def test_spatial_gap_cannot_be_filled_by_hull(self):
+        grid, a, b = self.fragments()
+        a['mask'] &= grid[..., 0] < -.05
+        b['mask'] &= grid[..., 0] > .05
+        self.assertFalse(same_surface(grid, a, b))
+
+    def test_body_sized_union_and_bent_surfaces_do_not_merge(self):
+        grid, a, b = self.fragments()
+        self.assertFalse(same_surface(grid*[3., 2., 1.], a, b))
+        grid[b['mask'], 2] += grid[b['mask'], 0]*2.
+        self.assertFalse(same_surface(grid, a, b))
+
+    def test_single_contact_cannot_bridge_two_objects(self):
+        grid, a, b = self.fragments()
+        a['mask'][1:] &= grid[1:, :, 0] < -.05
+        b['mask'][1:] &= grid[1:, :, 0] > .05
+        self.assertFalse(same_surface(grid, a, b))
+
     def test_pose_baseline_board_tilt_and_intrinsics_do_not_change_identity(self):
         for yaw in (-1.2, -.4, .6, 1.2):
             for shift in (-1.4, 0., 1.4):

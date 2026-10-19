@@ -21,7 +21,7 @@ from hashlib import sha256
 from nsl_plane_fit import complete_support, fit_point_planes, support_quality, cell_means
 from nsl_projection_fit import observation, outline_errors, refine_projection
 from nsl_dimensions import estimate_source_correction, measured_size
-from nsl_board_identity import identify_board, frame_fingerprint
+from nsl_board_identity import identify_board, frame_fingerprint, IDENTITY_VERSION
 
 
 ROOT = Path(__file__).resolve().parent
@@ -614,7 +614,7 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'from': 'nsl_pointcloud', 'to': 'color', 'translation_unit': 'm',
         'source_type': 'NSL organized point cloud', 'target_type': 'RealSense color',
         'square_size_m': .03, 'board_size_m': list(BOARD_M),
-        'source_geometry': geometry, 'calibration_version': 8,
+        'source_geometry': geometry, 'calibration_version': 9,
         'capture_root': str(Path(capture_root).resolve()),
         'target_intrinsic_source': str(Path(color_cal)/'Intrinsic.txt'),
         'target_distortion_source': str(Path(color_cal)/'Distortion.txt'),
@@ -705,8 +705,10 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
                'support_signature': support_signature(frames[name], frames[name]['source_plane'])}
         for name in chosen}
     current['board_identity_models'] = identity_models
+    current['board_identity_version'] = IDENTITY_VERSION
     current['board_identity_policy'] = ('Fixed source hypotheses associated in metric board coordinates; '
-        'known frames use time-block-excluded models; no RT-based point trimming or candidate feedback into RT fitting.')
+        'known frames use time-block-excluded models; source-only surface continuity distinguishes complementary fragments; '
+        'no point merging, RT-based point trimming or candidate feedback into RT fitting.')
     current['final_validated_frames'] = []
     for frame in frames.values():
         select_plane_for_rt(frame, current, color_cal)
@@ -857,6 +859,8 @@ def plane_status(frame: dict, calibration=None):
                 'detected': state in ('matched', 'partial'), 'training': training,
                 'identity': state, 'evidence': identity.get('evidence'), 'basis': identity['basis'],
                 'candidate_index': identity.get('index'),
+                'compatible_fragments': identity.get('compatible_fragments', []),
+                'identity_version': identity.get('version', 1),
                 'message': f"{identity.get('reason', identity['basis'])} / {identity['basis']} / "
                 f'RT 학습 이력: {training_text}. 대응 확인은 정밀도 합격 판정이 아닙니다.'}
     if frame.get("target_plane") is None or not board_candidates(frame):

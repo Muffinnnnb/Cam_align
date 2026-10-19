@@ -249,7 +249,7 @@ class Controller(QObject):
         return Path(self.settings.value(f'rt/{self.geometry}', str(output_dir('calibration') / name)))
 
     def point_plane_result_path(self):
-        return output_dir('calibration') / f'nsl_to_color_{self.geometry}_auto_v8_rt.json'
+        return output_dir('calibration') / f'nsl_to_color_{self.geometry}_auto_v9_rt.json'
 
     def read_range(self):
         z_min = self.window.zMinSpinBox.value()

@@ -113,11 +113,12 @@ def main():
     issue='20260922_095036_917'
     c.window.fileList.setCurrentItem(c.window.fileList.findItems(issue,Qt.MatchExactly)[0])
     checked=c.frame(issue)
-    assert checked['board_identity']['state']=='ambiguous'
-    assert checked['board_identity']['plane'] is None
+    assert checked['board_identity']['state']=='partial'
+    assert checked['board_identity']['compatible_fragments']
+    assert checked['board_identity']['plane'] is not checked['source_plane']
     assert '제외하고' in checked['board_identity']['basis']
-    assert c.statuses[issue]['state']=='unconfirmed'
-    app.processEvents();c.window.grab().save(str(out/'ambiguous_board.png'))
+    assert c.statuses[issue]['state']=='partial'
+    app.processEvents();c.window.grab().save(str(out/'fragment_board.png'))
     # Menus still support explicitly loading an existing RT.
     with patch('nsl_color_gui.QFileDialog.getOpenFileName',return_value=(str(rt_path),'')):
         c.window.loadRtButton.trigger()

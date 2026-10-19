@@ -1,0 +1,105 @@
+Cam_align v9 validation — 2026-10-20
+==================================
+
+Scope and metric
+---------------
+76 synchronized capture pairs from the existing 260922 dataset.
+Board location association, INCLUDING partial support, not full-board recovery,
+RT training rate, pixel accuracy, or accuracy on another camera arrangement.
+
+                  v8 baseline     v9
+Matched              57          57
+Partial              10          13
+Unconfirmed           6           6
+Ambiguous             3           0
+Including partial    67/76        70/76
+Rate                 88.16%       92.11%
+Matched alone        75.00%       75.00%
+
+Baseline: Git 56b6a91, with the saved v8 calibration.
+The real-data audit re-read all 76 original captures, used identical candidates
+and RT for both versions, and checked source XYZ/mask preservation.
+Each frame used its time-block-excluded association model, verified by its input
+fingerprint. This is internal cross-fitting, not an unseen external test set.
+The current dataset informed the improvement; do not interpret this number as
+an unbiased estimate of deployment performance.
+
+Three recovered partial associations
+------------------------------------
+20260922_093112_477
+20260922_095036_917
+20260922_095119_925
+
+Root cause: complementary fragments of the same board had low mask IoU and
+similar association scores, so v8 treated them as competing objects.
+v9 checks source-only continuity between the original candidate supports:
+- Sufficient actual neighboring samples in both directions, within 3 grid pixels.
+- Median 3D separation <= 30 mm.
+- Common plane RMS <= 20 mm and P90 <= 30 mm.
+- Combined extent <= 1.4 times the known 250 x 280 mm board dimensions.
+- Every compatible competing fragment is checked; no transitive merging.
+
+No candidate points are added, trimmed, merged, or synthesized. One original
+candidate is returned. Existing finite-board association gates are unchanged.
+These are coarse identity heuristics, NOT millimeter-accuracy guarantees.
+Nearly adjacent coplanar objects may remain ambiguous: no universal zero-error
+claim is made.
+
+Review and regression evidence
+------------------------------
+- All 8 contact sheets (76 frames) and all 3 before/after details were visually
+  reviewed. No obvious body/knee selection was found among 70 associations.
+  This is qualitative review, not pixel-level ground-truth annotation.
+- 58 unit tests passed. Existing tests cover 24 synthetic combinations of
+  pose, displacement and focal length; new tests cover rigid-pose invariance,
+  disconnected patches, separate depth layers, body-sized/bent surfaces and
+  insufficient boundary contact.
+- Actual Qt threaded processing completed for all 76 captures: matched 57,
+  partial 13, unconfirmed 6. The UI calls matched state "candidate" internally.
+- RT training used 27 frames. Training history exactly matched saved inliers.
+- Qt event loop remained responsive (1,363 timer ticks during calculation).
+- Saved RGB PLY XYZ and RGB matched 10,000 calculated points exactly;
+  preview, click depth, plane PLY, intensity PLY and projection export passed.
+  This verifies data flow, NOT physical alignment accuracy.
+- Existing RTs, annotations and local settings were preserved during testing.
+- Generated v9 R, t and source ray correction are exactly equal to v8.
+  This change improves association availability, not RGB reprojection precision.
+- No manual controls, frame-name exceptions or fixed RGB-position ROI added.
+- No other camera/layout real dataset is available. Generalization is unverified.
+
+Reproduce (local Python with requirements installed)
+--------------------------------------------------
+python -m unittest discover -s tests/unit -v
+python tests/integration/board_identity_audit.py --capture-root <capture-folder>
+
+The audit needs output/calibration/nsl_to_color_wf_range_auto_v8_rt.json,
+or pass --rt <saved-v8-rt.json>. Supply the matching cal/c intrinsics.
+The baseline commit can be selected with --baseline.
+
+Set CAM_ALIGN_CAPTURE_ROOT to the same capture directory, then:
+python tests/integration/nsl_gui_smoke.py
+
+The GUI regression also needs the historical auto_v5 RT named in its source.
+It writes only to output/validation/gui_smoke and does not replace active RTs.
+Audit images/JSON and generated calibration are local output artifacts, excluded
+from GitHub along with original captures and personal settings.
+
+Historical attribution
+----------------------
+9ce40c4 (2026-09-10): initial RealSense alignment; RANSAC and LM already present.
+2a510cc (2026-10-08): NSL baseline, fixed support, grouped RANSAC, finite-board
+                     constraints, LM and time-block validation.
+56b6a91 (2026-10-20): checkpoint of previously uncommitted v7/v8 work: independent
+                     source dimension correction, projection refinement,
+                     finite-board identity, fingerprints and partial states.
+v9: source-continuity disambiguation and this audit. See Git history and the
+    accompanying algorithm-evolution.html for the exact v9 commit.
+
+Earlier v7 metrics, not new v9 gains
+----------------------------------
+NSL-only dimension held-out MAE: 31.27 -> 15.97 mm (32-frame audit).
+Nominal WF baseline vs v7 time-block projection evaluation (66 frames):
+boundary median 18.09 -> 9.94 px; outside fraction 17.46 -> 5.05%.
+Point-plane RMS 17.61 -> 18.51 mm slightly worsened in that comparison.
+Source angle scale 0.8740447340867329 preserves radial range and azimuth.
+It is an empirical correction for this sensor/model, not factory calibration.

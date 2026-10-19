@@ -4,8 +4,43 @@ Only whole, independently generated source hypotheses are compared. No points
 are trimmed with RT, no expected sensor baseline, image position or pose is used.
 """
 from hashlib import sha256
+import cv2
 import numpy as np
+from scipy.ndimage import distance_transform_edt
 from nsl_geometry import corrected_points
+from nsl_plane_fit import cell_means, fit_plane
+
+IDENTITY_VERSION = 2
+
+
+def same_surface(grid, first, second):
+    """Source-only evidence that two masks describe pieces of one finite surface.
+
+    No union is exported or fitted to RT. Require actual neighboring samples,
+    continuous 3D depth and a compact common plane, not merely overlapping boxes.
+    30 mm is the existing source support gate, not an RT precision guarantee.
+    """
+    a, b = np.asarray(first['mask'], bool), np.asarray(second['mask'], bool)
+    minimum_links = max(12, int(.02*min(a.sum(), b.sum())))
+    for left, right in ((a, b), (b, a)):
+        distance, nearest = distance_transform_edt(~left, return_indices=True)
+        boundary = right & ~left & (distance <= 3)
+        if boundary.sum() < minimum_links:
+            return False
+        gaps = np.linalg.norm(grid[boundary]-grid[tuple(nearest[:, boundary])], axis=1)
+        if not np.isfinite(gaps).all() or np.median(gaps) > .030:
+            return False
+    points = grid[a | b]
+    if not np.isfinite(points).all():
+        return False
+    center, normal, offset = fit_plane(cell_means(points))
+    error = abs(points@normal-offset)
+    if np.sqrt(np.mean(error**2)) > .020 or np.percentile(error, 90) > .030:
+        return False
+    # Extents are rotation invariant and cannot grow across an entire body.
+    axes = np.linalg.svd(points-center, full_matrices=False)[2][:2]
+    size = np.sort(cv2.minAreaRect(((points-center)@axes.T).astype('float32'))[1])
+    return bool(np.all(size <= np.array([.25, .28])*1.40))
 
 
 def frame_fingerprint(frame):
@@ -72,7 +107,7 @@ def candidate_evidence(points, target, model):
 def identify_board(frame, calibration, K, distortion):
     """Return a selected fixed hypothesis or explicit uncertainty, never a substitute."""
     model, basis = association_model(frame, calibration, K, distortion)
-    result = dict(state='unverified', plane=None, basis=basis, candidates=[])
+    result = dict(state='unverified', plane=None, basis=basis, candidates=[], version=IDENTITY_VERSION)
     target = frame.get('target_plane')
     if model is None or target is None or 'corners3d' not in target:
         return result
@@ -91,14 +126,23 @@ def identify_board(frame, calibration, K, distortion):
         return result
     plausible.sort(key=lambda row: row[0])
     _, index, plane, evidence = plausible[0]
-    for score, _, other, other_evidence in plausible[1:]:
+    compatible = []
+    for score, other_index, other, other_evidence in plausible[1:]:
         a, b = np.asarray(plane['mask'], bool), np.asarray(other['mask'], bool)
         overlap = np.count_nonzero(a & b)/max(1, np.count_nonzero(a | b))
         if overlap < .20 and score < evidence['score']+.10 and other_evidence['coverage'] >= .35:
-            result.update(state='ambiguous', reason='서로 다른 후보의 대응 근거가 비슷함: 보드 선택 보류')
-            return result
+            # Complementary noisy patches need not share pixels. Check physical
+            # continuity against EVERY accepted patch; never transitive merging.
+            if all(same_surface(grid, member, other) for member in [plane]+[p for _, p in compatible]):
+                compatible.append((other_index, other))
+            else:
+                result.update(state='ambiguous', reason='분리된 표면 후보의 대응 근거가 비슷함: 보드 선택 보류')
+                return result
     # Recognizing a partial board does not make its normal suitable for fitting RT.
     full = plane.get('support_quality', {}).get('eligible', False) and evidence['coverage'] >= .60
     result.update(state='matched' if full else 'partial', plane=plane, index=index,
                   evidence=evidence, reason='고정 후보의 유한 보드 대응 확인' if full else '보드 부분 대응: 완전한 평면/RT 학습 적합성은 미확인')
+    if compatible:
+        result['compatible_fragments'] = [i for i, _ in compatible]
+        result['reason'] += ' / 원본 점군 연속성으로 같은 표면의 조각 확인 (점 합치기 없음)'
     return result
