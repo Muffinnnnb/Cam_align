@@ -74,8 +74,8 @@ def main():
     assert history_used==used and len(used)>0
     assert all(s['state'] in ('candidate','partial','unconfirmed','failed') for s in c.statuses.values())
     states={s:sum(v['state']==s for v in c.statuses.values()) for s in ('candidate','partial','unconfirmed','failed')}
-    assert states['candidate'] >= 74, 'Retain >=74/76 matched boards; partials do NOT count'
-    assert states['partial'] > 0, 'Retain honest incomplete detections'
+    assert states['candidate'] == 76, 'All 76 must be matched; partials do NOT count'
+    assert states['partial'] == 0, 'Do not include partials in the 100% numerator'
     assert len(c.result['board_identity_models'])==4
     assert len(c.statuses)==76
     assert c.window.inputGroup.isEnabled() and c.window.calibrateButton.isEnabled()
@@ -133,11 +133,11 @@ def main():
     c.window.fileList.setCurrentItem(c.window.fileList.findItems(issue,Qt.MatchExactly)[0])
     wait_frame()
     checked=c.frame(issue)
-    assert checked['board_identity']['state']=='partial'
-    assert not checked['board_identity']['plane']['support_quality']['eligible']
-    assert checked['board_identity']['plane'] is not checked['source_plane']
+    assert checked['board_identity']['state']=='matched'
+    assert checked['board_identity']['plane']['support_quality']['eligible']
+    assert checked['board_identity']['plane']['mask'].sum() > 1030, 'Recovery must add measured support, not relabel a partial'
     assert '제외하고' in checked['board_identity']['basis']
-    assert c.statuses[issue]['state']=='partial'
+    assert c.statuses[issue]['state']=='candidate'
     app.processEvents();c.window.grab().save(str(out/'fragment_board.png'))
     # Menus still support explicitly loading an existing RT.
     with patch('nsl_color_gui.QFileDialog.getOpenFileName',return_value=(str(rt_path),'')):

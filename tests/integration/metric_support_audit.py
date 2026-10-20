@@ -33,23 +33,30 @@ def audit(args):
         frame = nc.analyze_pair(pair, args.color_cal, .1, 20., 'wf_range')
         raw_hash = sha256(frame['xyz_mm'].tobytes()).hexdigest()
         grid = frame['xyz_mm'].reshape(*frame['pcd_shape'], 3)*.001
-        with patch.object(nc, 'metric_support', return_value=[]), patch.object(nc, 'plane_conditioned_support', return_value=[]), patch.object(nc, 'local_support', return_value=[]):
+        with patch.object(nc, 'metric_support', return_value=[]), patch.object(nc, 'plane_conditioned_support', return_value=[]), patch.object(nc, 'local_support', return_value=[]), patch.object(nc, 'basin_support', return_value=[]):
             old_planes = nc.nsl_plane_candidates(frame['xyz_mm'], frame['pcd_shape'], .1, 20.)
         for p in old_planes:
             p['support_quality'] = support_quality(grid[p['mask']], p)
         old_frame = dict(frame, source_candidates=old_planes)
         before = identify_board(old_frame, rt, K, D)
         after = identify_board(frame, rt, K, D)
+        previous = identify_board(dict(frame, source_candidates=[p for p in frame['source_candidates']
+                                  if p.get('support_origin') != 'range_gradient_basin']), rt, K, D)
+        if previous['state'] == 'matched':
+            assert after['state'] == 'matched'
+            np.testing.assert_array_equal(previous['plane']['mask'], after['plane']['mask'])
         identical = signature(old_planes) == signature(frame['source_candidates'])
         assert sha256(frame['xyz_mm'].tobytes()).hexdigest() == raw_hash
         assert '제외하고' in after['basis'], 'Require exact-input time-block-excluded RT'
         assert before['state'] != 'matched' or after['state'] == 'matched'
         row = dict(timestamp=pair['timestamp'], before=before['state'], after=after['state'],
+                   before_basin=previous['state'],
                    candidate_supports_identical=identical,
                    extra_candidates=len(frame['source_candidates'])-len(old_planes))
         rows.append(row); print(row, flush=True)
     assert sha256(args.rt.read_bytes()).hexdigest() == rt_hash
     summary = dict(denominator=len(rows), before=dict(Counter(r['before'] for r in rows)),
+        before_basin=dict(Counter(r['before_basin'] for r in rows)),
         after=dict(Counter(r['after'] for r in rows)), partial_included=False,
         all_source_supports_identical=all(r['candidate_supports_identical'] for r in rows),
         rt_sha256=rt_hash, rt_unchanged=True, raw_xyz_preserved=True,

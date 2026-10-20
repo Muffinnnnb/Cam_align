@@ -4,6 +4,7 @@ Not an external-camera accuracy benchmark. Truth masks are used ONLY to score
 the outputs; neither detector receives them. RGB/RT association is tested in
 test_nsl_board_identity.py, independently of this source detection audit.
 """
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -40,7 +41,7 @@ def render(width, height, fov, center, pose, noise, dropout, seed, board_present
     return grid, truth & np.isfinite(grid).all(2)
 
 
-def audit():
+def audit(scene_seed=8127, output=None):
     fixed = [
         (320, 240, 70, (0, 0, .8), (0, 0, 0), .003, .1),
         (160, 120, 70, (0, 0, .8), (0, 0, 0), .003, .1),
@@ -52,7 +53,7 @@ def audit():
         (320, 240, 70, (-.3, -.1, 1.5), (-.3, -.5, .2), .006, .1),
     ]
     cases = [(args, i+31, True) for i, args in enumerate(fixed)]
-    rng = np.random.default_rng(8127)
+    rng = np.random.default_rng(scene_seed)
     for i in range(32):
         width = int(rng.choice([160, 320]))
         center = [*rng.uniform(-.16, .16, 2), rng.uniform(.55, 1.4)]
@@ -70,6 +71,7 @@ def audit():
                     stack.enter_context(patch.object(nc, 'metric_support', return_value=[]))
                     stack.enter_context(patch.object(nc, 'plane_conditioned_support', return_value=[]))
                     stack.enter_context(patch.object(nc, 'local_support', return_value=[]))
+                    stack.enter_context(patch.object(nc, 'basin_support', return_value=[]))
                 planes = nc.nsl_plane_candidates(grid.reshape(-1, 3)*1000, grid.shape[:2])
             eligible = [p for p in planes if support_quality(grid[p['mask']], p)['eligible']]
             scored = [(np.count_nonzero(p['mask'] & truth)/max(1, truth.sum()),
@@ -82,6 +84,7 @@ def audit():
         rows.append(row); print(json.dumps(row), flush=True)
     board_rows = [r for r in rows if r['board_present']]
     summary = dict(description='Synthetic source detection, NOT measured cross-camera performance',
+        scene_seed=scene_seed,
         criterion='>=70% recall of measured visible board samples, >=95% purity; all existing structural gates',
         board_cases=len(board_rows), no_board_cases=len(rows)-len(board_rows),
         baseline_detected=sum(int(r['baseline']['detected']) for r in board_rows),
@@ -89,7 +92,7 @@ def audit():
         regressions=[r['case'] for r in rows if r['baseline']['detected'] and not r['metric_fallback']['detected']],
         new_no_board_candidates=sum(max(0, r['metric_fallback']['eligible_candidates']-r['baseline']['eligible_candidates']) for r in rows if not r['board_present']),
         rows=rows)
-    output = ROOT/'output/validation/metric_support'
+    output = output or ROOT/'output/validation/metric_support'
     output.mkdir(parents=True, exist_ok=True)
     (output/'synthetic_summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     assert not summary['regressions'] and not summary['new_no_board_candidates'], summary
@@ -98,4 +101,8 @@ def audit():
 
 
 if __name__ == '__main__':
-    audit()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=8127)
+    parser.add_argument('--output', type=Path)
+    args = parser.parse_args()
+    audit(args.seed, args.output)

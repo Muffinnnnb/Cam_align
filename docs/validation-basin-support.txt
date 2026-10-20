@@ -1,0 +1,151 @@
+Cam_align v13 — bounded source range-gradient basins
+2026-10-20 / retained v12 checkpoint: 08d3f1a
+
+Scope and definition
+--------------------
+Board correspondence means the existing "matched" state, with all existing
+source structural gates AND finite-board association gates. Partials never
+enter the numerator; the denominator is ALL 76 captures. This is not a claim
+of pixel-perfect color registration or universal detection accuracy.
+FINAL: 76 matched / ALL 76 captures = 100%; partial/unconfirmed/failed all 0.
+Fresh source/target re-read, unchanged active v10 time-block-excluded models:
+v12 74 matched + 2 partial -> v13 76 matched. All old 74 masks are identical.
+The two recovered masks were re-read again and exactly matched the audited
+1525/1417-point masks. No partial was relabelled or counted as a full match.
+
+Mechanism and safeguards
+-----------------------
+The remaining v12 failures were fragmented source supports. Independent depth
+footprints seed a watershed of range-gradient cost, with 5/9-pixel median
+proposal scales and search radii proportional to footprint size. Unsaturated
+16-bit gradient ordering avoids artificial constant-cost plateaus. Source
+proposals overlapping an already eligible object are skipped; new candidates
+are appended after the old paths rather than changing their priority.
+
+The image border and artificial search fence are NOT physical board edges.
+A final candidate must also have a measured outer neighborhood inconsistent
+with its own plane: >=55% of valid surrounding points beyond the existing
+30 mm source-outlier scale, with >=20 samples. An inner gap of 5% of the
+footprint's linear image scale (minimum 2 pixels), then an equally wide outer
+ring, avoids the fitted support's eroded rim and mixed boundary pixels.
+This is SOURCE plane continuation, not an assumption about camera separation.
+Missing ring points do not count as positive boundary evidence. A board flush
+with a coplanar background may remain unresolved by this supplemental path;
+the previous detection paths remain intact.
+
+Median filtering and nearest-filled proposal images do NOT modify measured
+XYZ. The final support, normal, size and PLY use original finite samples via
+the unchanged complete_support and support_quality routines. Existing size,
+flatness, occupancy, quadrilateral, normal-stability and identity gates were
+not relaxed. No manual ROI, timestamp exception, fixed pixel location, RGB
+crop, missing-checker-pattern rule or presumed sensor baseline is used.
+The known 250x280 mm target and organized, correctly modelled XYZ remain
+explicit prerequisites. This is not a universal detector of arbitrary boards.
+RANSAC, linear-loss LM, source-only dimension fitting and fusion are unchanged.
+Range-basin supplements have calibration_eligible=False: they are identity
+proposals, not RT/dimension observations. A broader bounded footprint is not
+proof of an unbiased calibration normal. board_candidates(for_calibration=True)
+keeps the previous observations and ordering; display association still examines
+the new source candidates. This is a method-level policy, not a frame exception.
+
+Measured support changes (active v10 block-excluded association)
+---------------------------------------------------------------
+20260922_095036_917: 1030 -> 1525 actual points; 715 added, 220 removed;
+flatness .3122 -> .181991 (< unchanged .20); board cell coverage 89.0625%.
+20260922_095122_942: 984 -> 1417 points; 438 added, 5 removed;
+flatness .2114 -> .167680; board cell coverage 98.4375%.
+These timestamp strings are report labels, never detector inputs.
+All previous 74 matched masks are identical, not merely the same label.
+Five contact sheets covering all 76 and detailed new-support views were
+visually inspected: no obvious body-instead-of-board selection was seen.
+This is NOT pixel-labelled ground truth; small boundary errors remain possible.
+
+Rejected prototype and generality checks
+---------------------------------------
+The initial saturated-cost prototype matched all 76 real captures but added
+3 eligible background candidates in a no-board synthetic scene. It was NOT
+accepted on real-data count alone. The production version adds unsaturated
+gradient costs, image/search-fence checks and source-plane continuation tests.
+
+Original synthetic suite (32 board + 8 no-board conditions): baseline 22 ->
+current 30 detected boards, no previous success lost, no new no-board candidate.
+Additional random geometry seed 23019 (same 8 fixed board cases + 24 new board
+conditions + 8 new no-board conditions): baseline 17 -> current 27 / 32,
+no previous success lost, no new no-board candidate. One new negative scene
+contains TWO background candidates in BOTH baseline and current detector.
+Thus zero new candidates is NOT zero total false candidates. Source geometry
+alone is not semantic identity; finite-board cross-camera association remains
+necessary. Synthetic no-board trials are not real-camera association tests.
+Neither synthetic suite is counted in the real 76-frame numerator/denominator.
+Tests vary FOV 50-110 degrees, resolution 160x120/320x240, position, pose,
+noise and dropout. Other real camera models/layouts remain unvalidated.
+
+85 unit tests passed in local Python, including rigid-pose changes, missing
+sample preservation, artificial-fence rejection, continuous-wall rejection,
+RT geometry, asynchronous UI work and PLY regression. The initial sandbox
+run failed only on temporary-file permissions; the local run passed.
+
+Active calibration preservation
+-------------------------------
+Existing active v10 RT SHA256:
+93565cbefedeaa1aeddb36d562f46bda6a01191fb80461a9415c92c69519d384
+Settings SHA256:
+5acf75c628a523a1661b7228af1eb4cb342e85ed298c7944044a76ce573b7ca7
+Active RT/settings are not automatically replaced. New user-triggered
+calibration saves separately to nsl_to_color_<model>_auto_v13_rt.json.
+RT training inliers and board correspondence counts must be reported separately.
+
+Rejected joint-learning trial
+-----------------------------
+Allowing basin supplements into RT learning produced 76 matched / 0 partial
+and 37 training inliers, but the SAME original 69 supports under block-excluded
+models worsened: median point-plane RMS v12 16.481294 -> 17.648418 mm.
+Boundary mean-error median stayed 9.062617 px, outside fraction worsened from
+4.274084% to 4.296361%. The active v10 model's corresponding medians are
+16.452876 mm, 9.242953 px and 4.380221%. More training inliers did not prove
+better calibration. The joint-learning trial is not the shipped policy; its
+local evidence is trial_joint_rt.json and trial_joint_metrics.json.
+The production policy separates identity-only supplements from calibration.
+All 76 cached source inputs were compared with the v12 checkpoint: 269 RT
+candidate records and all 37 source-dimension observations were identical,
+including ordering, XYZ, masks and normals. See calibration_input_parity.json.
+
+Final production RT / Qt result
+------------------------------
+The final real Qt run re-read all 76 captures, recalibrated, and performed four
+time-block-excluded fits. 76 matched, 0 partial/unconfirmed/failed; 35 training
+inliers (same as v12, NOT 76). On the SAME original 69 supports the final v13
+block-excluded medians exactly equal v12:
+  point-plane RMS 16.4812934975 mm
+  image-boundary error 9.0626172305 px
+  outside-board fraction 4.2740841248 percent
+The full RT matrix and all four block-excluded R/t models also exactly equal
+the v12 checkpoint, not only these medians.
+See production_rt_metrics.json. These are internal held-out consistency
+measures, not an external ground-truth RT accuracy certificate. The active
+v10 calibration is still preserved, so its existing RGB mapping is unchanged.
+
+The real Qt regression passed with 6052 batch event-loop ticks. Rapid selection
+kept the latest frame; toggles, model guards, click-depth lookup, separate
+exports and original-file preservation passed. Every one of 9958 PLY vertices
+and RGB samples exactly matched computed XYZ and the original color image.
+PLY export equality proves the saved data is correct, NOT that physical color
+registration is error-free. No plane masking was used to hide RGB mismatch.
+The updated existing HTML has eleven scenes; 1280/375/320 px layouts,
+reduced-motion mode and JavaScript error checks passed. Renders were inspected.
+
+Reproduce
+---------
+python -m unittest discover -s tests/unit -v
+python tests/integration/synthetic_board_audit.py
+python tests/integration/synthetic_board_audit.py --seed 23019
+    --output output/validation/additional_synthetic
+python tests/integration/metric_support_audit.py --capture-root <capture-folder>
+    --rt output/calibration/nsl_to_color_wf_range_auto_v10_rt.json
+Set CAM_ALIGN_CAPTURE_ROOT, then run tests/integration/nsl_gui_smoke.py.
+
+Local diagnostics: output/validation/robust_surface_20261020/.
+Final fresh audit: final_fresh/actual_summary.json.
+Qt outputs: output/validation/gui_smoke/ (isolated RT, PLY, screenshots/report).
+The existing algorithm-evolution.html is extended, not replaced. No capture,
+generated RT, personal setting, PLY or local photograph is added to GitHub.

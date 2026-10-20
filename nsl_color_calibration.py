@@ -22,6 +22,7 @@ from nsl_plane_fit import complete_support, fit_point_planes, support_quality, c
 from nsl_surface_support import range_support, paired_support, plane_conditioned_support
 from nsl_metric_support import metric_support
 from nsl_local_support import local_support
+from nsl_basin_support import basin_support
 from nsl_projection_fit import observation, outline_errors, refine_projection
 from nsl_dimensions import estimate_source_correction, measured_size
 from nsl_board_identity import identify_board, frame_fingerprint, IDENTITY_VERSION
@@ -226,7 +227,8 @@ def nsl_plane_candidates(xyz_mm: np.ndarray, shape: tuple[int, int],
     if not any(support_quality(grid[p['mask']], p)['eligible'] for p in planes):
         planes += plane_conditioned_support(grid, planes, plane_quality)
     planes.sort(key=lambda p: p['score'])
-    return planes + local_support(grid, planes, plane_quality)
+    planes += local_support(grid, planes, plane_quality)
+    return planes + basin_support(grid, planes, plane_quality)
 
 
 def nsl_plane(xyz_mm: np.ndarray, shape: tuple[int, int],
@@ -303,9 +305,11 @@ def analyze_pair(pair: dict, color_cal=DEFAULT_COLOR_CAL,
     return frame
 
 
-def board_candidates(frame):
+def board_candidates(frame, for_calibration=False):
     """Source-only target identity, with an explicit 'none confirmed' outcome."""
     candidates = frame.get('source_candidates') or []
+    if for_calibration:
+        candidates = [p for p in candidates if p.get('calibration_eligible', True)]
     if not candidates or not candidates[0].get('detector_version'):
         return candidates  # Historical synthetic/legacy compatibility.
     grid = frame['xyz_mm'].reshape(*frame['pcd_shape'], 3)*.001
@@ -577,11 +581,11 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
     status('NSL에서 독립 검출한 전체 지지영역 고정 중...')
     records, all_records, excluded, references, weights = [], [], {}, [], []
     for name, frame in frames.items():
-        candidates = board_candidates(frame)
+        candidates = board_candidates(frame, for_calibration=True)
         plane = candidates[0] if candidates else None
         frame['source_plane'] = plane
         if plane is None or frame.get('target_plane') is None:
-            excluded[str(name)] = ['NSL 또는 Color 평면 검출 실패']
+            excluded[str(name)] = ['RT 학습용 NSL 후보 또는 Color 평면 없음 (대응 보조 후보는 학습 제외)']
             continue
         grid = frame['xyz_mm'].reshape(*frame['pcd_shape'], 3)*.001
         record = (str(name), grid[plane['mask']], frame['target_plane'], plane['board_center'])
@@ -628,7 +632,7 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'from': 'nsl_pointcloud', 'to': 'color', 'translation_unit': 'm',
         'source_type': 'NSL organized point cloud', 'target_type': 'RealSense color',
         'square_size_m': .03, 'board_size_m': list(BOARD_M),
-        'source_geometry': geometry, 'calibration_version': 12,
+        'source_geometry': geometry, 'calibration_version': 13,
         'capture_root': str(Path(capture_root).resolve()),
         'target_intrinsic_source': str(Path(color_cal)/'Intrinsic.txt'),
         'target_distortion_source': str(Path(color_cal)/'Distortion.txt'),
@@ -637,9 +641,9 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'z_range_m': [next(iter(frames.values()))['z_min'], next(iter(frames.values()))['z_max']],
         'input_frame_count': len(frames), 'projection_overlap_threshold': .80,
         'eligible_frame_count': len(chosen), 'support_excluded_frames': excluded,
-        'eligibility_policy': 'independent source hypotheses; structural support + quadrilateral footprint; no precision-based early ranking; explicit no-board outcome',
+        'eligibility_policy': 'independent source hypotheses; structural support + quadrilateral footprint; identity-only basin proposals excluded from RT/dimension learning; explicit no-board outcome',
         'projection_coverage_threshold': .75,
-        'source_geometry_check': 'fixed full support / raw residual / occupied cells / depth discontinuities / plane-conditioned and local-metric fallback',
+        'source_geometry_check': 'fixed full support / raw residual / occupied cells / depth discontinuities / plane-conditioned, local-metric and range-basin fallback',
         'guided_refinement': 'fixed source candidates for training; separate finite-board association for display; no RT-based point trimming',
     })
     if 'color' in next(iter(frames.values())):
