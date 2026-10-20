@@ -88,7 +88,7 @@ def paired_support(grid, planes, quality_function):
     return complete_support(grid, seeds, quality_function)
 
 
-def plane_conditioned_support(grid, planes, quality_function):
+def plane_conditioned_support(grid, planes, quality_function, *, fast_proposals=False):
     """Grow source hypotheses in plane-residual space, not raw range space.
 
     A tilted plane has a range gradient even when perfectly flat. Subtracting
@@ -100,7 +100,7 @@ def plane_conditioned_support(grid, planes, quality_function):
     if valid.sum() < 150:
         return []
     nearest = distance_transform_edt(~valid, return_distances=False, return_indices=True)
-    seeds, models = [], []
+    seeds, models, packed = [], [], []
     for plane in planes:
         normal, offset = plane['normal'], plane['h']
         if any(abs(normal@n) > np.cos(np.deg2rad(3)) and abs(offset-h) < .010 for n, h in models):
@@ -110,7 +110,15 @@ def plane_conditioned_support(grid, planes, quality_function):
         for window in (5, 9):
             # OpenCV's float median supports kernels <=5; SciPy preserves float
             # residuals for the larger window without quantizing measured data.
-            smooth = cv2.medianBlur(residual, window) if window <= 5 else median_filter(residual, size=window)
+            if window <= 5:
+                smooth = cv2.medianBlur(residual, window)
+            elif fast_proposals:
+                # Millimetre quantization speeds PROPOSALS only; fits/exports
+                # still read the original unquantized XYZ below.
+                quantized = np.clip(np.rint(residual*1000)+128, 0, 255).astype('uint8')
+                smooth = (cv2.medianBlur(quantized, window).astype('float32')-128)*.001
+            else:
+                smooth = median_filter(residual, size=window)
             gradient = np.hypot(cv2.Sobel(smooth, cv2.CV_32F, 1, 0), cv2.Sobel(smooth, cv2.CV_32F, 0, 1))
             for boundary in (None, .12):
                 region = abs(smooth) < .030
@@ -123,13 +131,16 @@ def plane_conditioned_support(grid, planes, quality_function):
                     if label == 0 or not 150 <= stats[label, cv2.CC_STAT_AREA] <= 12000:
                         continue
                     mask = (labels == label) & valid
-                    if mask.sum() < 100 or any(np.count_nonzero(mask & p['mask'])/np.count_nonzero(mask | p['mask']) > .90 for p in seeds):
+                    # Exact bit-set IoU avoids repeatedly scanning full grids.
+                    bits = int.from_bytes(np.packbits(mask).tobytes(), 'little')
+                    if mask.sum() < 100 or any((bits & b).bit_count()/(bits | b).bit_count() > .90 for b in packed):
                         continue
                     raw = grid[mask]
                     _, n, _ = fit_plane(cell_means(raw))
                     quality = quality_function(raw, n)
                     if max(quality['size']) <= .6 and min(quality['size']) >= .12:
                         seeds.append(dict(mask=mask, normal=n))
+                        packed.append(bits)
     result = complete_support(grid, seeds, quality_function)
     return [dict(p, support_origin='plane_conditioned') for p in result
             if support_quality(grid[p['mask']], p)['eligible']]

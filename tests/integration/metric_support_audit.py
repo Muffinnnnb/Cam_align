@@ -33,7 +33,7 @@ def audit(args):
         frame = nc.analyze_pair(pair, args.color_cal, .1, 20., 'wf_range')
         raw_hash = sha256(frame['xyz_mm'].tobytes()).hexdigest()
         grid = frame['xyz_mm'].reshape(*frame['pcd_shape'], 3)*.001
-        with patch.object(nc, 'metric_support', return_value=[]), patch.object(nc, 'plane_conditioned_support', return_value=[]):
+        with patch.object(nc, 'metric_support', return_value=[]), patch.object(nc, 'plane_conditioned_support', return_value=[]), patch.object(nc, 'local_support', return_value=[]):
             old_planes = nc.nsl_plane_candidates(frame['xyz_mm'], frame['pcd_shape'], .1, 20.)
         for p in old_planes:
             p['support_quality'] = support_quality(grid[p['mask']], p)

@@ -1,0 +1,124 @@
+Cam_align v12 — source-only local metric plane hypotheses
+2026-10-20 / retained v11 checkpoint: 28ee9d7
+
+Actual board association (partials excluded)
+-------------------------------------------
+v10 / initial baseline: 69 matched / ALL 76 captures = 90.7895%.
+v11 / plane-residual fallback: 72 / 76 = 94.7368%.
+v12 / local metric hypotheses: 74 / 76 = 97.3684%; 2 partial.
+No partial is included in the numerator. 100% has NOT been achieved.
+This metric is board association, NOT pixel/color-registration accuracy.
+
+Added matches across v11+v12:
+  20260922_093112_477, 20260922_094932_432, 20260922_095014_149,
+  20260922_095031_526, 20260922_095141_511.
+Timestamps are diagnostic record labels, NEVER algorithm inputs or exceptions.
+The two additional v12 supports changed from 272 -> 1136 and 757 -> 1088
+original measured points. Added/removed samples were 864/0 and 414/83;
+finite-board cell coverage was 92.1875% and 84.375%, respectively. They were
+not promoted by renaming a partial mask or lowering eligibility thresholds.
+The original 69 matched selections retained exactly the same source masks.
+All 76 source/target pairs were also re-read with the production detector:
+output/validation/local_metric_20261020/fresh/actual_summary.json.
+All known-capture identity checks used exact-input, time-block-excluded v10 RTs.
+Five 16-tile contact sheets (last sheet partly blank) and detailed new-match
+views were visually inspected. No obvious body-instead-of-board selection was
+seen in this audit; this is NOT a pixel-labelled ground-truth accuracy claim.
+
+What changed, and why it is not a frame-specific workaround
+----------------------------------------------------------
+Scene-wide hypotheses can be dominated by larger surfaces. Existing incomplete
+SOURCE objects with independent boundary support propose locations for metric
+local fits. 50 mm voxels choose starting samples; 60/100/160 mm neighborhoods
+of original points generate local plane hypotheses. Their plane-residual
+regions are finally refit and tested using original finite XYZ.
+
+Existing eligible objects are not replaced. Extra candidates are appended,
+not re-sorted ahead of the original hypotheses. The selected final support
+must pass the UNCHANGED size, flatness, occupancy, boundary, quadrilateral and
+normal-stability checks, then the existing finite-board association rules.
+There is no RGB/RT-guided source crop, fixed image position, timestamp rule,
+checker-pattern/missing-depth heuristic, presumed baseline, or synthetic XYZ.
+The known 250x280 mm board remains an explicit target assumption.
+RANSAC thresholds, source-only dimension estimation, and linear-loss LM remain
+unchanged. Source masks never force colors or move points during RGB fusion.
+
+For speed, the large residual median uses 1 mm quantization of PROPOSALS only;
+original measured coordinates and final fits/exports are not quantized.
+Exact bit-set IoU replaces repeated full-grid overlap scans. On ten evenly
+spaced cached frames, old/new local-fallback masks and normals were identical.
+Mean supplemental cost: 6.02 -> 5.35 seconds in a concurrent-test session;
+this is NOT a reliable standalone FPS benchmark. More search still costs time.
+Selected-frame analysis now runs in a bounded background worker. Latest
+selection wins, stale results may be cached but cannot replace the view, and
+read/association failures are logged without entering an automatic retry loop.
+
+Recalibration / precision guard
+------------------------------
+The broader candidate set also completed source-only dimension fitting,
+grouped RANSAC, LM, and four contiguous-time-block calibrations: 74 matched,
+2 partial, 35 RT training inliers in the fresh production Qt run. Association
+and RT-training counts differ. The earlier cached prototype had 36 inliers;
+the production result, not the prototype count, is authoritative here.
+On the SAME original 69 source supports using block-excluded models:
+  point-plane RMS median: 16.4528755 -> 16.4812935 mm (slightly worse)
+  image-boundary error median: 9.2429526 -> 9.0626172 px
+  outside-board fraction median: 4.3802213 -> 4.2740841 percent
+These are internal held-out consistency measures, not absolute RT truth.
+The numbers above were recomputed from the actual Qt-produced v12 RT, on the
+unchanged original 69 supports, with exact-input block-excluded models:
+output/validation/local_metric_20261020/production_rt_metrics.json.
+The active v10 RT/settings are preserved, so active RGB mapping is unchanged.
+New automatic calibration saves separately to auto_v12_rt.json.
+
+Preserved active RT SHA256:
+93565cbefedeaa1aeddb36d562f46bda6a01191fb80461a9415c92c69519d384
+Preserved settings SHA256:
+5acf75c628a523a1661b7228af1eb4cb342e85ed298c7944044a76ce573b7ca7
+
+Remaining partials and rejected directions
+-----------------------------------------
+095036_917: selected source width 173.7 mm; flatness .3122 exceeds .20.
+095122_942: flatness .2114 exceeds .20, although the footprint looks plausible.
+These diagnostics describe SOURCE point distributions, not assumed distances
+between cameras. We did not lower thresholds simply to make these two green.
+Whole-scene local seeding, focused local seeding, and changing duplicate-pruning
+priority failed to recover complete eligible support in these two cases.
+Earlier 20 mm refit / multistart RT variants degraded held-out registration or
+lost old matches; they remain inactive (see validation-metric-support.txt).
+This does not prove that every possible method must fail. It means safe 100%
+is not established by these trials; no success claim is made for the last two.
+
+Generality and regression scope
+-------------------------------
+Synthetic scenes vary position, rotation, FOV 50-110 degrees, 160x120/320x240
+resolution, noise and missing samples. Board cases: baseline22 -> metric28 ->
+plane-conditioned29 -> local30 / 32. No previous success regressed; no new
+eligible candidate occurred in the 8 no-board scenes.
+Synthetic success requires >=70% measured visible board recall, >=95% purity,
+and the unchanged structural gates. It is NOT added to the real denominator.
+Other real camera models/layouts were not provided and remain unvalidated.
+78 unit tests passed, including local geometry, missing-sample preservation,
+stale selection suppression, background failures and RT/PLY regressions.
+The real Qt integration passed: 76 captures, 74 matched / 2 partial, 35 RT
+inliers, 6308 event-loop ticks during batch work. Rapid file switching retained
+the latest selection. All 9958 exported PLY XYZ and RGB values exactly matched
+the computed points and sampled original color image. Pixel-depth lookup,
+view toggles, separate exports, model switching and original RT/settings/
+annotation preservation passed. Test RT/output stays under output/validation.
+Existing HTML: ten scenes, 1280/375/320 px layouts, reduced-motion mode and
+JavaScript error checks passed; desktop and mobile renders were inspected.
+
+Reproduce
+---------
+python -m unittest discover -s tests/unit -v
+python tests/integration/synthetic_board_audit.py
+python tests/integration/metric_support_audit.py --capture-root <capture-folder>
+    --rt output/calibration/nsl_to_color_wf_range_auto_v10_rt.json
+Set CAM_ALIGN_CAPTURE_ROOT to the capture folder, then run:
+python tests/integration/nsl_gui_smoke.py
+
+Local diagnostic artifacts: output/validation/local_metric_20261020/ and
+output/validation/plane_conditioned_20261020/. Raw captures, generated RTs,
+personal settings, PLYs and local screenshots are excluded from GitHub.
+The existing algorithm-evolution.html was extended in place, not replaced.

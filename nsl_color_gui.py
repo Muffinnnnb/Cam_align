@@ -29,6 +29,26 @@ UI_PATH = Path(__file__).with_name("nsl_color_viewer.ui")
 SETTINGS_PATH = Path(__file__).with_name("nsl_color_settings.ini")
 
 
+class FrameWorker(QObject):
+    succeeded = Signal(str, object)
+    failed = Signal(str, str)
+    done = Signal()
+
+    def __init__(self, pair, color_cal, z_min, z_max, geometry):
+        super().__init__()
+        self.args = pair, color_cal, z_min, z_max, geometry
+
+    def run(self):
+        stamp = self.args[0]['timestamp']
+        try:
+            self.succeeded.emit(stamp, analyze_pair(*self.args))
+        except Exception as exc:
+            LOGGER.exception('frame analysis failed stamp=%s', stamp)
+            self.failed.emit(stamp, str(exc))
+        finally:
+            self.done.emit()
+
+
 class CalibrationWorker(QObject):
     progress = Signal(int, int, str, bool, bool)
     stage = Signal(str)
@@ -137,6 +157,9 @@ class Controller(QObject):
         self.current_depth = None
         self.worker_thread = None
         self.worker = None
+        self.frame_thread = self.frame_worker = None
+        self.requested_stamp = None
+        self.pending_job = None
 
         self.window.captureRootEdit.setText(str(self.capture_root))
         self.window.colorCalEdit.setText(str(self.color_cal))
@@ -177,7 +200,7 @@ class Controller(QObject):
 
     def eventFilter(self, obj, event):
         try:
-            if event.type() == QEvent.Close and obj == self.window and self.worker_thread is not None:
+            if event.type() == QEvent.Close and obj == self.window and (self.worker_thread is not None or self.frame_thread is not None):
                 event.ignore()
                 self.window.statusbar.showMessage("실행 중인 검사/계산 완료 후 창을 닫아주세요.")
                 return True
@@ -249,7 +272,7 @@ class Controller(QObject):
         return Path(self.settings.value(f'rt/{self.geometry}', str(output_dir('calibration') / name)))
 
     def point_plane_result_path(self):
-        return output_dir('calibration') / f'nsl_to_color_{self.geometry}_auto_v11_rt.json'
+        return output_dir('calibration') / f'nsl_to_color_{self.geometry}_auto_v12_rt.json'
 
     def read_range(self):
         z_min = self.window.zMinSpinBox.value()
@@ -366,6 +389,56 @@ class Controller(QObject):
         frame['allow_nf_comparison'] = self.window.nfCompareCheckBox.isChecked()
         return frame
 
+    def request_frame(self, stamp):
+        self.requested_stamp = stamp
+        self.clear_view()
+        self.window.detectionStatus.setText(f'원본 3D 평면 분석 중: {stamp}')
+        if self.frame_thread is not None:
+            return  # Latest selection wins; do not launch unbounded workers.
+        thread = QThread(self)
+        worker = FrameWorker(self.pair_by_stamp[stamp], self.color_cal, self.z_min, self.z_max, self.geometry)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self.frame_ready)
+        worker.failed.connect(self.frame_failed)
+        worker.done.connect(thread.quit)
+        worker.done.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self.frame_finished)
+        self.frame_thread, self.frame_worker = thread, worker
+        self.set_busy(True)
+        self.window.fileList.setEnabled(True)
+        thread.start()
+
+    def frame_ready(self, stamp, frame):
+        try:
+            if self.result:
+                select_plane_for_rt(frame, self.result, self.color_cal)
+            if len(self.frames) >= 12:
+                self.frames.pop(next(iter(self.frames)))
+            self.frames[stamp] = frame
+            if stamp == self.requested_stamp:
+                self.show_frame(stamp)
+        except Exception as exc:
+            LOGGER.exception('frame association failed stamp=%s', stamp)
+            self.frame_failed(stamp, str(exc))
+
+    def frame_failed(self, stamp, error):
+        self.apply_status(stamp, {'state': 'failed', 'message': f'분석 실패: {error}'})
+        if stamp == self.requested_stamp:
+            self.requested_stamp = None
+            self.window.detectionStatus.setText(f'분석 실패: {error}')
+
+    def frame_finished(self):
+        self.frame_thread = self.frame_worker = None
+        self.set_busy(False)
+        self.update_controls()
+        if self.pending_job is not None:
+            inspect_only, self.pending_job = self.pending_job, None
+            self.start_job(inspect_only)
+        elif self.requested_stamp and self.requested_stamp != self.current_stamp:
+            self.show_frame(self.requested_stamp)
+
     def apply_status(self, stamp, status):
         self.statuses[stamp] = status
         items = self.window.fileList.findItems(stamp, Qt.MatchExactly)
@@ -407,7 +480,7 @@ class Controller(QObject):
         self.update_controls()
 
     def update_controls(self):
-        idle = self.worker_thread is None
+        idle = self.worker_thread is None and self.frame_thread is None
         ready = self.current_stamp is not None
         frame = self.frames.get(self.current_stamp, {})
         allowed = self.result is not None and not fusion_block_reason(frame)
@@ -419,6 +492,10 @@ class Controller(QObject):
         self.window.saveSourceButton.setEnabled(idle and ready)
 
     def show_frame(self, stamp):
+        self.requested_stamp = stamp
+        if stamp not in self.frames:
+            self.request_frame(stamp)
+            return
         self.current_depth = None
         try:
             frame = self.frame(stamp)
@@ -629,6 +706,9 @@ class Controller(QObject):
         self.start_job(inspect_only=True)
 
     def start_job(self, inspect_only):
+        if self.frame_thread is not None:
+            self.pending_job = inspect_only
+            return
         if self.worker_thread is not None:
             return
         if not self.pairs or (not inspect_only and len(self.pairs) < 6):

@@ -38,6 +38,21 @@ def main():
     settings.setValue('input/capture_root', str(DEFAULT_CAPTURE_ROOT));settings.sync()
     c=Controller(result_path=rt_path,settings_path=out/'settings.ini',auto_validate=False)
     c.window.show();app.processEvents()
+    selection_ticks=[]
+    selection_timer=QTimer();selection_timer.timeout.connect(lambda:selection_ticks.append(time.monotonic()))
+    selection_timer.start(20)
+    def wait_frame():
+        deadline=time.monotonic()+90
+        while c.frame_thread is not None and time.monotonic()<deadline:
+            app.processEvents();time.sleep(.005)
+        assert c.frame_thread is None,'frame analysis timeout'
+        app.processEvents()
+    wait_frame()
+    assert len(selection_ticks)>5,'Selected-frame analysis blocked the GUI event loop'
+    c.window.fileList.setCurrentRow(1)
+    c.window.fileList.setCurrentRow(2)
+    wait_frame()
+    assert c.current_stamp==c.window.fileList.item(2).text(),'Stale worker replaced latest selection'
     for name in ('manualBoardButton','clearBoardButton','pointPlaneRtButton','rgbCheckBox','projectionCheckBox'):
         assert c.window.findChild(QObject,name) is None,name
     assert not hasattr(c,'pick_manual_board')
@@ -46,11 +61,12 @@ def main():
     errors=[];ticks=[]
     timer=QTimer();timer.timeout.connect(lambda:ticks.append(time.monotonic()));timer.start(100)
     c.run_calibration();c.worker.failed.connect(errors.append)
-    deadline=time.monotonic()+900
+    deadline=time.monotonic()+1500
     while c.worker_thread is not None and time.monotonic()<deadline:
         app.processEvents();time.sleep(.01)
     timer.stop()
     assert c.worker_thread is None,'worker timeout'
+    wait_frame()
     assert not errors,errors
     assert len(ticks)>20,'GUI event loop was not responsive'
     used=set(c.result['ransac_inlier_frames'])
@@ -58,13 +74,14 @@ def main():
     assert history_used==used and len(used)>0
     assert all(s['state'] in ('candidate','partial','unconfirmed','failed') for s in c.statuses.values())
     states={s:sum(v['state']==s for v in c.statuses.values()) for s in ('candidate','partial','unconfirmed','failed')}
-    assert states['candidate'] >= 72, 'Retain >=72/76 matched boards; partials do NOT count'
+    assert states['candidate'] >= 74, 'Retain >=74/76 matched boards; partials do NOT count'
     assert states['partial'] > 0, 'Retain honest incomplete detections'
     assert len(c.result['board_identity_models'])==4
     assert len(c.statuses)==76
     assert c.window.inputGroup.isEnabled() and c.window.calibrateButton.isEnabled()
     stamp='20260922_093209_224'
     c.window.fileList.setCurrentItem(c.window.fileList.findItems(stamp,Qt.MatchExactly)[0])
+    wait_frame()
     f=c.frame(stamp)
     assert f['rt_inlier']==(stamp in used)
     assert not f.get('manual_roi')
@@ -101,6 +118,7 @@ def main():
         assert c.current_depth is not None
     issue='20260922_094624_361'
     c.window.fileList.setCurrentItem(c.window.fileList.findItems(issue,Qt.MatchExactly)[0])
+    wait_frame()
     assert c.statuses[issue]['state']=='candidate'
     assert c.statuses[issue]['training']==('used' if issue in used else 'excluded')
     assert c.window.fileList.currentItem().background().color().name()=='#e0f4df'
@@ -113,6 +131,7 @@ def main():
     app.processEvents();c.window.grab().save(str(out/'reported_frame.png'))
     issue='20260922_095036_917'
     c.window.fileList.setCurrentItem(c.window.fileList.findItems(issue,Qt.MatchExactly)[0])
+    wait_frame()
     checked=c.frame(issue)
     assert checked['board_identity']['state']=='partial'
     assert not checked['board_identity']['plane']['support_quality']['eligible']
@@ -123,20 +142,25 @@ def main():
     # Menus still support explicitly loading an existing RT.
     with patch('nsl_color_gui.QFileDialog.getOpenFileName',return_value=(str(rt_path),'')):
         c.window.loadRtButton.trigger()
+    wait_frame()
     assert c.result_path==rt_path
     c.window.geometryComboBox.setCurrentIndex(0)
+    wait_frame()
     assert c.current_depth is None and not c.window.saveFusedButton.isEnabled()
     c.window.nfCompareCheckBox.setChecked(True)
     assert c.current_depth is not None and c.window.saveFusedButton.isEnabled()
     c.window.nfCompareCheckBox.setChecked(False)
     c.window.applyWfButton.click()
+    wait_frame()
     assert c.geometry=='wf_range' and c.result_path==rt_path
     assert all(sha256(p.read_bytes()).hexdigest()==h for p,h in hashes.items())
     report={'input':len(c.pairs),'used':len(used),'association_states':states,
             'training_history_matches_rt':True,'rgb_exact_points':len(saved),
-            'event_loop_ticks':len(ticks),'no_manual_controls':True,'old_rt_and_annotations_preserved':True}
+            'event_loop_ticks':len(ticks),'frame_event_loop_ticks':len(selection_ticks),
+            'no_manual_controls':True,'old_rt_and_annotations_preserved':True}
     (out/'report.json').write_text(json.dumps(report,indent=2),'utf-8')
     print(report,flush=True)
+    selection_timer.stop()
     c.window.close()
 
 

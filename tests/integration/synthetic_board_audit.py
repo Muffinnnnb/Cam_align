@@ -69,6 +69,7 @@ def audit():
                 if variant == 'baseline':
                     stack.enter_context(patch.object(nc, 'metric_support', return_value=[]))
                     stack.enter_context(patch.object(nc, 'plane_conditioned_support', return_value=[]))
+                    stack.enter_context(patch.object(nc, 'local_support', return_value=[]))
                 planes = nc.nsl_plane_candidates(grid.reshape(-1, 3)*1000, grid.shape[:2])
             eligible = [p for p in planes if support_quality(grid[p['mask']], p)['eligible']]
             scored = [(np.count_nonzero(p['mask'] & truth)/max(1, truth.sum()),

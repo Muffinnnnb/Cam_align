@@ -21,6 +21,7 @@ from hashlib import sha256
 from nsl_plane_fit import complete_support, fit_point_planes, support_quality, cell_means
 from nsl_surface_support import range_support, paired_support, plane_conditioned_support
 from nsl_metric_support import metric_support
+from nsl_local_support import local_support
 from nsl_projection_fit import observation, outline_errors, refine_projection
 from nsl_dimensions import estimate_source_correction, measured_size
 from nsl_board_identity import identify_board, frame_fingerprint, IDENTITY_VERSION
@@ -224,7 +225,8 @@ def nsl_plane_candidates(xyz_mm: np.ndarray, shape: tuple[int, int],
         planes += metric_support(grid, plane_quality)
     if not any(support_quality(grid[p['mask']], p)['eligible'] for p in planes):
         planes += plane_conditioned_support(grid, planes, plane_quality)
-    return sorted(planes, key=lambda p: p['score'])
+    planes.sort(key=lambda p: p['score'])
+    return planes + local_support(grid, planes, plane_quality)
 
 
 def nsl_plane(xyz_mm: np.ndarray, shape: tuple[int, int],
@@ -626,7 +628,7 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'from': 'nsl_pointcloud', 'to': 'color', 'translation_unit': 'm',
         'source_type': 'NSL organized point cloud', 'target_type': 'RealSense color',
         'square_size_m': .03, 'board_size_m': list(BOARD_M),
-        'source_geometry': geometry, 'calibration_version': 11,
+        'source_geometry': geometry, 'calibration_version': 12,
         'capture_root': str(Path(capture_root).resolve()),
         'target_intrinsic_source': str(Path(color_cal)/'Intrinsic.txt'),
         'target_distortion_source': str(Path(color_cal)/'Distortion.txt'),
@@ -637,7 +639,7 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
         'eligible_frame_count': len(chosen), 'support_excluded_frames': excluded,
         'eligibility_policy': 'independent source hypotheses; structural support + quadrilateral footprint; no precision-based early ranking; explicit no-board outcome',
         'projection_coverage_threshold': .75,
-        'source_geometry_check': 'fixed full support / raw residual / occupied cells / depth discontinuities / plane-conditioned fallback',
+        'source_geometry_check': 'fixed full support / raw residual / occupied cells / depth discontinuities / plane-conditioned and local-metric fallback',
         'guided_refinement': 'fixed source candidates for training; separate finite-board association for display; no RT-based point trimming',
     })
     if 'color' in next(iter(frames.values())):
