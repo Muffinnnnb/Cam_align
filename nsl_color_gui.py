@@ -188,6 +188,14 @@ class Controller(QObject):
         self.window.zMaxSpinBox.setValue(self.z_max)
         self.window.geometryComboBox.addItems(GEOMETRY_LABELS)
         self.window.geometryComboBox.setCurrentIndex(GEOMETRY_MODES.index(self.geometry))
+        try:
+            size = int(self.settings.value('view/point_size', 3))
+        except (TypeError, ValueError):
+            size = 3
+        self.window.pointSizeSpinBox.setValue(max(1, min(21, size//2*2+1)))
+        self.window.pointShapeComboBox.setCurrentIndex(
+            int(self.settings.value('view/point_shape', 'dot') == 'cross'))
+        self.window.projectionControls.setVisible(False)
 
         for label in (self.window.sourceImageLabel, self.window.targetImageLabel):
             label.installEventFilter(self)
@@ -204,6 +212,8 @@ class Controller(QObject):
         self.window.validateButton.triggered.connect(self.validate_all)
         self.window.loadRtButton.triggered.connect(lambda: self.choose_rt())
         self.window.viewComboBox.currentIndexChanged.connect(self.refresh_view)
+        self.window.pointSizeSpinBox.valueChanged.connect(self.projection_style_changed)
+        self.window.pointShapeComboBox.currentIndexChanged.connect(self.projection_style_changed)
         self.window.saveSourceButton.triggered.connect(self.save_source)
         self.window.saveFusedButton.clicked.connect(self.save_fused)
         self.window.saveProjectionButton.triggered.connect(self.save_projection_image)
@@ -487,6 +497,21 @@ class Controller(QObject):
         LOGGER.warning('NF comparison opt-in=%s capture=%s rt=%s', checked, self.capture_root, self.result_path)
         self.refresh_view()
 
+    def projection_style(self):
+        return dict(point_size=self.window.pointSizeSpinBox.value(),
+                    point_shape=('dot', 'cross')[self.window.pointShapeComboBox.currentIndex()])
+
+    def projection_style_changed(self):
+        spin = self.window.pointSizeSpinBox
+        spin.blockSignals(True)
+        spin.setValue(spin.value()//2*2+1)
+        spin.blockSignals(False)
+        style = self.projection_style()
+        self.settings.setValue('view/point_size', style['point_size'])
+        self.settings.setValue('view/point_shape', style['point_shape'])
+        self.settings.sync()
+        self.refresh_view()  # Display only: no detection or RT recalculation.
+
     def clear_view(self, message='표시할 촬영쌍이 없습니다.'):
         self.current_depth = self.current_stamp = None
         self.images.clear()
@@ -508,6 +533,8 @@ class Controller(QObject):
         for index in range(1, 4):
             self.window.viewComboBox.model().item(index).setEnabled(allowed)
         self.window.saveSourceButton.setEnabled(idle and ready)
+        self.window.projectionControls.setVisible(self.window.viewComboBox.currentIndex() in (2, 3))
+        self.window.projectionControls.setEnabled(idle and ready and allowed)
 
     def show_frame(self, stamp):
         self.requested_stamp = stamp
@@ -537,11 +564,6 @@ class Controller(QObject):
                 source_view, count = fused_color_view(frame, self.result, self.color_cal)
                 frame["visible_rgb_count"] = count
                 self.window.sourceGroup.setTitle(f"실제 Color RGB 점군 · NSL 시점 ({count:,}점, 검정=매칭 없음)")
-            elif view_mode == 2 and can_fuse:
-                source_view, _ = projection_view(
-                    frame, self.result, self.color_cal
-                )
-                self.window.sourceGroup.setTitle("검사용 거리 색상 투영 — RGB PLY 색상이 아님")
             else:
                 displayed_plane = displayed_board(frame)
                 partial = (frame.get('board_identity') or {}).get('state') == 'partial'
@@ -560,9 +582,14 @@ class Controller(QObject):
             target_view = frame["color"] if rgb_view else color_plane_view(
                 frame["color"], frame["target_plane"]
             )
-            if view_mode == 3 and can_fuse:
-                target_view = board_error_view(frame, self.result, self.color_cal)
-            self.window.targetGroup.setTitle('Color 점-평면 잔차 / 자홍=보드 밖 투영 (정답 검증 아님)' if view_mode == 3 and can_fuse else 'RealSense Color 체스보드 평면')
+            target_title = 'RealSense Color 체스보드 평면'
+            if view_mode == 2 and can_fuse:
+                target_view, count = projection_view(frame, self.result, self.color_cal, **self.projection_style())
+                target_title = f'Color 위 점군 투영 ({count:,}점 · 거리 색상, RGB PLY 아님)'
+            elif view_mode == 3 and can_fuse:
+                target_view = board_error_view(frame, self.result, self.color_cal, **self.projection_style())
+                target_title = 'Color 점-평면 잔차 / 자홍=보드 밖 투영 (정답 검증 아님)'
+            self.window.targetGroup.setTitle(target_title)
             self.set_image(self.window.sourceImageLabel, source_view)
             self.set_image(self.window.targetImageLabel, target_view)
             self.current_stamp = stamp
@@ -771,7 +798,7 @@ class Controller(QObject):
     def set_busy(self, busy):
         for name in ("inputGroup", "reloadButton", "calibrateButton", "fileList",
                      "saveSourceButton", "saveFusedButton", "saveProjectionButton",
-                     "viewComboBox", "validateButton", "loadRtButton", "intensityCheckBox", "applyWfButton", "nfCompareCheckBox"):
+                     "viewComboBox", "projectionControls", "validateButton", "loadRtButton", "intensityCheckBox", "applyWfButton", "nfCompareCheckBox"):
             getattr(self.window, name).setEnabled(not busy)
 
     def calibration_stage(self, message):
@@ -993,7 +1020,7 @@ class Controller(QObject):
             path += ".png"
         try:
             count = save_projection(
-                Path(path), frame, self.result, self.color_cal
+                Path(path), frame, self.result, self.color_cal, **self.projection_style()
             )
             self.window.statusbar.showMessage(
                 f"투영 이미지 저장 완료: {count:,} points — {path}"

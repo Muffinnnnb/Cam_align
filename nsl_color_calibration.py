@@ -26,6 +26,7 @@ from nsl_basin_support import basin_support
 from nsl_projection_fit import observation, outline_errors, refine_projection
 from nsl_dimensions import estimate_source_correction, measured_size
 from nsl_board_identity import identify_board, frame_fingerprint, IDENTITY_VERSION
+from nsl_overlay import point_overlay
 
 
 ROOT = Path(__file__).resolve().parent
@@ -1005,7 +1006,8 @@ def fused_color_view(frame: dict, calibration: dict, color_cal=DEFAULT_COLOR_CAL
     return rgb_source_image(frame["pcd_shape"], indices, rgb), stats["output_points"]
 
 
-def board_error_view(frame, calibration, color_cal=DEFAULT_COLOR_CAL):
+def board_error_view(frame, calibration, color_cal=DEFAULT_COLOR_CAL, *,
+                     point_size=1, point_shape='dot'):
     """Color-view diagnostic only; never changes RGB export or calibration input."""
     image = frame['color'].copy()
     plane, target = displayed_board(frame), frame.get('target_plane')
@@ -1028,7 +1030,8 @@ def board_error_view(frame, calibration, color_cal=DEFAULT_COLOR_CAL):
     outside = np.array([cv2.pointPolygonTest(np.asarray(target['region'], np.float32),
                                            (float(u), float(v)), False) < 0 for u, v in uv])
     colors[outside] = [255, 0, 255]
-    image[uv[good,1], uv[good,0]] = colors[good]
+    image = point_overlay(image, uv[good], colors[good], points[good, 2],
+                          size=point_size, shape=point_shape, opacity=1.)
     polygon = np.rint(target['region']).astype('int32')
     cv2.polylines(image, [polygon], True, (255,255,255), 1)
     cv2.putText(image, 'Plane mm: green <10 / amber 10-20 / red >=20; magenta: outside board', (8,20),
@@ -1037,7 +1040,7 @@ def board_error_view(frame, calibration, color_cal=DEFAULT_COLOR_CAL):
 
 
 def projection_view(frame: dict, calibration: dict,
-                    color_cal=DEFAULT_COLOR_CAL):
+                    color_cal=DEFAULT_COLOR_CAL, *, point_size=1, point_shape='dot'):
     points, _, _, u, v, _ = project_to_color(frame, calibration, color_cal, True)
     image = frame["color"].copy()
     if len(points):
@@ -1047,12 +1050,14 @@ def projection_view(frame: dict, calibration: dict,
             hi = lo + 1e-6
         q = np.uint8(np.clip((z - lo) * 255 / (hi - lo), 0, 255))
         colors = cv2.applyColorMap(q.reshape(-1, 1), cv2.COLORMAP_TURBO).reshape(-1, 3)
-        image[v, u] = np.rint(image[v, u] * .3 + colors * .7).astype(np.uint8)
+        image = point_overlay(image, np.c_[u, v], colors, z,
+                              size=point_size, shape=point_shape)
     return image, len(points)
 
 
 def save_projection(path: Path, frame: dict, calibration: dict,
-                    color_cal=DEFAULT_COLOR_CAL):
-    image, count = projection_view(frame, calibration, color_cal)
+                    color_cal=DEFAULT_COLOR_CAL, *, point_size=1, point_shape='dot'):
+    image, count = projection_view(frame, calibration, color_cal,
+                                  point_size=point_size, point_shape=point_shape)
     write_image(Path(path), image)
     return count

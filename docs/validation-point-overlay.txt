@@ -1,0 +1,57 @@
+Color image point overlay — 2026-10-20
+
+Scope
+- Existing NSL -> Color RT, intrinsics, ray correction and occlusion are reused.
+- View 2 now overlays the cloud on the RIGHT Color image; the LEFT stays the
+  NSL board view. View 3 keeps its plane-error colors.
+- Dot/cross glyphs, odd sizes 1..21 native Color pixels (default 3).
+- Settings persist automatically; PNG export uses the same glyph settings.
+- No change to detection, board identity, calibration, RGB sampling or PLY.
+- Enlarged glyphs are display only, not extra points or interpolated depth.
+
+Unit regression
+  python -m unittest discover -s tests/unit -q
+  PASS: 101 tests / 9.265 seconds, local Python 3.12.
+  Initial sandbox run hit temporary-directory permission errors; rerun outside
+  sandbox passed. No assertions or criteria were weakened.
+  New tests cover exact cross geometry, disks, size 1, nearest glyph overlap,
+  single blending, invalid/behind/out-of-bounds inputs, edge clipping, input
+  preservation, original single-pixel blend equivalence and save forwarding.
+
+Real Qt regression (offscreen, Malgun Gothic font)
+  CAM_ALIGN_CAPTURE_ROOT=<local 260922 captures>
+  python tests/integration/nsl_overlay_ui_smoke.py
+  Local output: output/validation/point_overlay/
+  Isolated settings; existing v10 WF RT loaded read-only.
+  Normal threaded frame loading: first frame, then 20260922_093152_447.
+  Projected visible points in selected frame: 9,030.
+  PASS:
+  - Modes 0/1 hide controls; modes 2/3 show controls.
+  - Dot/cross, sizes 1/5/7/21, even-size normalization.
+  - RIGHT image matches projection_view output; PNG matches native pixels.
+  - A new Controller restores size and shape from the test settings.
+  - No RT disables projection controls; no extra detection runs on styling.
+  - Original Color, XYZ, projected XYZ/RGB/intensity/UV, RT and sparse depth
+    remain exactly unchanged across all display changes.
+  - Clicking a measured center returns its original Z. Clicking a drawn arm
+    without a measured center returns no match.
+  - Original active RT file and user settings remain byte-identical.
+  - Qt screenshot visually checked: both panels and controls fit.
+  Final repeat display-mode/style timings: 7.8, 43.7, 69.3, 11.4, 70.0,
+  44.8, 51.5, 50.2, 55.0, 52.9 ms. These are warm display operations (not source
+  analysis, calibration, or guaranteed timings on other resolutions/hardware).
+
+Documentation
+- Appended to the existing algorithm-evolution.html; no replacement page.
+- Existing 11 animation stages still operate; reduced motion still supported.
+- Headless Edge: no JavaScript errors or horizontal overflow at 1280/375/320 px.
+- Added section visually checked at desktop and mobile widths.
+
+Limitations
+- No new calibration accuracy claim; no external-camera validation.
+- Color overlay uses distance colors, NOT recoloring of the exported RGB PLY.
+- Larger markers can visually cover background pixels around a point. For
+  precise alignment inspection use size 1; geometry and visibility are still
+  evaluated at the original measured center.
+- UI scales the image to its panel, so native-pixel marker sizes scale with it.
+- No recomputation of all 76 calibration frames: numerical algorithms unchanged.

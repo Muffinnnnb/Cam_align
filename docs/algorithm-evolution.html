@@ -111,6 +111,11 @@
 <div class="notice">검출 범위·후보 수·판정 임계값·RANSAC·LM·교차검증을 줄여서 빨라진 것이 아닙니다. 처음 보는 입력은 기존의 전체 분석이 필요하고, RT 재계산 자체도 생략하지 않습니다. 주된 개선 대상은 재검사·재실행·파일 재선택입니다.</div>
 <p class="muted">동일한 5장을 비교한 분석/로딩 단계: 합계 26.62초 → 0.31초(장당 평균 5.32초 → 0.061초). 후보·학습 입력·투영 XYZ/RGB 값은 정확히 같았습니다. 캐시를 사용한 실제 76장 재검사는 약 6.2초였으며, 최초 분석이나 RT 계산 시간의 단축률로 해석하면 안 됩니다. <a href="validation-analysis-cache.txt">측정 조건·94개 단위 테스트·Qt 검증 기록</a></p>
 </section>
+<section id="point-overlay" class="chapter"><div class="eyebrow">Added · display only</div><h2>Color 사진 위에 점군 겹쳐 보기 — 점 또는 십자(+)</h2>
+<p class="muted">보기 목록에서 <b>Color 이미지 위 전체 점군 투영 (거리 색상)</b>을 선택하면 우측 원본 컬러 사진 위에 현재 RT로 투영된 점이 나타납니다. 좌측은 NSL 보드 대응 화면으로 유지하여 두 시점을 비교할 수 있습니다.</p>
+<div class="findings"><article><h3>1. 크기와 모양 선택</h3><p>투영·잔차 보기에서만 조절줄이 나타납니다. 원본 Color 픽셀 기준 1~21 px의 홀수 크기와 점(●)·십자(+)를 선택합니다. 설정은 자동 저장되며 투영 PNG 저장에도 같은 모양을 적용합니다.</p></article><article><h3>2. 사진과 거리 색상</h3><p>점 색은 기존 거리 색상이고 원본 사진 위에 반투명하게 표시합니다. 가림 검사를 통과한 실제 점만 사용하며 확대된 표시끼리 겹치면 가까운 점을 우선합니다. 잔차 보기에서는 기존 오차 색상을 유지합니다.</p></article><article><h3>3. 데이터는 바꾸지 않기</h3><p>크기는 표시용 기호의 크기일 뿐입니다. 빈 픽셀에 깊이를 채우거나 XYZ·RT·RGB PLY 색을 바꾸지 않습니다. 깊이는 실제 투영 중심 픽셀에만 존재하므로 확대된 십자 팔을 클릭하면 “매칭 없음”일 수 있습니다.</p></article></div>
+<p class="muted">실측 Qt 시험에서 9,030점 투영, 크기·모양 변경, 설정 복원, PNG와 화면 원본 픽셀 일치, XYZ/RGB/RT 및 깊이맵 불변을 확인했습니다. 표시 변경은 재분석을 실행하지 않습니다. 이 시험의 투영/잔차 화면 갱신은 약 40~70 ms였으며 전체 분석·보정의 처리 시간이나 정합 정확도를 뜻하지 않습니다. <a href="validation-point-overlay.txt">검증 조건과 101개 단위 테스트 결과</a></p>
+</section>
 </main><footer>Cam_align · 오프라인 실행 가능 · 외부 라이브러리·추적·네트워크 요청 없음<br>2026-10-20 검증. 원본 촬영·점군·RT·개인 설정은 GitHub에 포함하지 않습니다. 코드: <a href="https://github.com/Muffinnnnb/Cam_align">Muffinnnnb/Cam_align</a></footer>
 </div>
 <script>

@@ -83,8 +83,32 @@
         <item><widget class="QComboBox" name="viewComboBox">
          <item><property name="text"><string>보드 대응: 초록=대응 / 파랑=부분 / 미확인 시 표시 보류</string></property></item>
          <item><property name="text"><string>실제 Color RGB 융합 (PLY와 동일 색상)</string></property></item>
-         <item><property name="text"><string>검사용 거리 색상 투영 (RGB 아님)</string></property></item>
+         <item><property name="text"><string>Color 이미지 위 전체 점군 투영 (거리 색상)</string></property></item>
          <item><property name="text"><string>점-평면 잔차: 초록 &lt;10 / 노랑 10~20 / 빨강 ≥20 mm · 자홍=보드 밖 투영</string></property></item>
+        </widget></item>
+        <item><widget class="QWidget" name="projectionControls">
+         <property name="toolTip"><string>원본 Color 이미지 픽셀 기준의 표시 크기입니다. 깊이 픽셀·PLY 좌표·RGB 값은 바뀌지 않습니다. PNG 저장에도 같은 크기와 모양을 적용합니다.</string></property>
+         <layout class="QHBoxLayout" name="projectionControlsLayout">
+          <property name="leftMargin"><number>0</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item><widget class="QLabel" name="pointSizeLabel"><property name="text"><string>점 크기</string></property></widget></item>
+          <item><widget class="QSpinBox" name="pointSizeSpinBox">
+           <property name="minimum"><number>1</number></property><property name="maximum"><number>21</number></property>
+           <property name="keyboardTracking"><bool>false</bool></property>
+           <property name="singleStep"><number>2</number></property><property name="value"><number>3</number></property>
+           <property name="suffix"><string> px</string></property>
+           <property name="toolTip"><string>지름 / 십자의 전체 길이. 1~21 px 홀수이며 짝수 입력은 다음 홀수로 맞춥니다.</string></property>
+          </widget></item>
+          <item><widget class="QLabel" name="pointShapeLabel"><property name="text"><string>점 모양</string></property></widget></item>
+          <item><widget class="QComboBox" name="pointShapeComboBox">
+           <item><property name="text"><string>점 (●)</string></property></item>
+           <item><property name="text"><string>십자 (+)</string></property></item>
+          </widget></item>
+          <item><widget class="QLabel" name="projectionHintLabel"><property name="text"><string>표시만 변경 · 설정 자동 저장</string></property></widget></item>
+          <item><spacer name="projectionSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>0</height></size></property></spacer></item>
+         </layout>
         </widget></item>
         <item><widget class="QLabel" name="geometryNoticeLabel">
          <property name="text"><string>물체 대응과 정합 정확도는 별개입니다. 모호한 후보를 몸통 등으로 대체하지 않습니다. 카메라·센서 배치를 바꾸면 RT를 재계산하세요.</string></property>
@@ -135,7 +159,7 @@
   <action name="loadRtButton"><property name="text"><string>RT JSON 불러오기…</string></property></action>
   <action name="validateButton"><property name="text"><string>전체 재검사 (RT 유지)</string></property></action>
   <action name="saveSourceButton"><property name="text"><string>평면 표시 PLY 저장 (NSL 좌표)…</string></property></action>
-  <action name="saveProjectionButton"><property name="text"><string>검사용 거리 투영 PNG 저장…</string></property></action>
+  <action name="saveProjectionButton"><property name="text"><string>Color 점군 투영 PNG 저장 (거리 색상)…</string></property></action>
   <action name="intensityCheckBox"><property name="text"><string>PLY에 intensity 포함</string></property><property name="checkable"><bool>true</bool></property></action>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
