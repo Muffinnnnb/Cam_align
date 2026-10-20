@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import nsl_color_calibration as nc
 from nsl_board_identity import identify_board
-from nsl_surface_support import range_support, paired_support
+from nsl_surface_support import range_support, paired_support, plane_conditioned_support
 from nsl_plane_fit import support_quality
 from test_nsl_board_identity import scene
 
@@ -72,6 +72,36 @@ class SurfaceSupportTests(unittest.TestCase):
         f['source_candidates']=[f['source_candidates'][1]]
         f['source_candidates'][0]['support_quality']['eligible']=False
         self.assertEqual(identify_board(f,rt,K,D)['state'],'partial')
+
+    def test_conditioned_regions_recover_tilted_measured_support(self):
+        grid,board=self.board()
+        for tilt in (-.7,.5):
+            rotation=cv2.Rodrigues(np.array([.2,tilt,.3]))[0]
+            moved=grid@rotation.T+[.1,-.1,.4]
+            normal=-rotation[:,2];offset=float(normal@(rotation@[0.,0.,1.]+[.1,-.1,.4]))
+            seed=board.copy();seed[:45]=False;seed[75:]=False
+            original=moved.copy()
+            planes=plane_conditioned_support(moved,[dict(mask=seed,normal=normal,h=offset)],nc.plane_quality)
+            self.assertTrue(planes)
+            best=max(planes,key=lambda p:np.count_nonzero(p['mask']&board))
+            self.assertGreater(np.count_nonzero(best['mask']&board)/board.sum(),.80)
+            self.assertFalse(np.any(best['mask']&~board))
+            self.assertTrue(support_quality(moved[best['mask']],best)['eligible'])
+            np.testing.assert_array_equal(moved,original)
+
+    def test_conditioned_regions_never_fill_missing_points(self):
+        grid,board=self.board();grid[50:65,50:65]=np.nan
+        seed=board&np.isfinite(grid).all(2)
+        planes=plane_conditioned_support(grid,[dict(mask=seed,normal=np.array([0.,0.,-1.]),h=-1.)],nc.plane_quality)
+        self.assertTrue(planes)
+        for p in planes:
+            self.assertFalse(p['mask'][50:65,50:65].any())
+            self.assertTrue(np.isfinite(grid[p['mask']]).all())
+
+    def test_conditioned_regions_require_source_seed_and_valid_data(self):
+        grid,_=self.board()
+        self.assertEqual(plane_conditioned_support(grid,[],nc.plane_quality),[])
+        self.assertEqual(plane_conditioned_support(np.full_like(grid,np.nan),[],nc.plane_quality),[])
 
 
 if __name__=='__main__':unittest.main()

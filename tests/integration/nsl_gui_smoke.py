@@ -58,7 +58,7 @@ def main():
     assert history_used==used and len(used)>0
     assert all(s['state'] in ('candidate','partial','unconfirmed','failed') for s in c.statuses.values())
     states={s:sum(v['state']==s for v in c.statuses.values()) for s in ('candidate','partial','unconfirmed','failed')}
-    assert states['candidate'] >= 69, '90% requires >=69/76 matched boards; partials do NOT count'
+    assert states['candidate'] >= 72, 'Retain >=72/76 matched boards; partials do NOT count'
     assert states['partial'] > 0, 'Retain honest incomplete detections'
     assert len(c.result['board_identity_models'])==4
     assert len(c.statuses)==76

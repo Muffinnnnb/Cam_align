@@ -2,7 +2,7 @@
 import cv2
 import numpy as np
 from scipy.ndimage import distance_transform_edt, median_filter
-from nsl_plane_fit import cell_means, fit_plane, complete_support
+from nsl_plane_fit import cell_means, fit_plane, complete_support, support_quality
 
 
 def same_surface(grid, first, second):
@@ -86,3 +86,50 @@ def paired_support(grid, planes, quality_function):
     # complete_support reads raw points again and applies all existing structural
     # gates, including coverage, size, flatness, normal stability and boundaries.
     return complete_support(grid, seeds, quality_function)
+
+
+def plane_conditioned_support(grid, planes, quality_function):
+    """Grow source hypotheses in plane-residual space, not raw range space.
+
+    A tilted plane has a range gradient even when perfectly flat. Subtracting
+    its source-only plane model removes that slope before region proposals.
+    Nearest filling/median filtering affect proposals ONLY; final fitting reads
+    original finite XYZ and retains all existing structural eligibility gates.
+    """
+    valid = np.isfinite(grid).all(2)
+    if valid.sum() < 150:
+        return []
+    nearest = distance_transform_edt(~valid, return_distances=False, return_indices=True)
+    seeds, models = [], []
+    for plane in planes:
+        normal, offset = plane['normal'], plane['h']
+        if any(abs(normal@n) > np.cos(np.deg2rad(3)) and abs(offset-h) < .010 for n, h in models):
+            continue
+        models.append((normal, offset))
+        residual = (grid@normal-offset)[tuple(nearest)].astype('float32')
+        for window in (5, 9):
+            # OpenCV's float median supports kernels <=5; SciPy preserves float
+            # residuals for the larger window without quantizing measured data.
+            smooth = cv2.medianBlur(residual, window) if window <= 5 else median_filter(residual, size=window)
+            gradient = np.hypot(cv2.Sobel(smooth, cv2.CV_32F, 1, 0), cv2.Sobel(smooth, cv2.CV_32F, 0, 1))
+            for boundary in (None, .12):
+                region = abs(smooth) < .030
+                if boundary is not None:
+                    region &= gradient < boundary
+                region = cv2.morphologyEx(region.astype('uint8'), cv2.MORPH_OPEN, np.ones((3, 3), 'uint8'))
+                _, labels, stats, _ = cv2.connectedComponentsWithStats(region)
+                overlap = np.bincount(labels[plane['mask']])
+                for label in np.flatnonzero(overlap >= max(100, .30*plane['mask'].sum())):
+                    if label == 0 or not 150 <= stats[label, cv2.CC_STAT_AREA] <= 12000:
+                        continue
+                    mask = (labels == label) & valid
+                    if mask.sum() < 100 or any(np.count_nonzero(mask & p['mask'])/np.count_nonzero(mask | p['mask']) > .90 for p in seeds):
+                        continue
+                    raw = grid[mask]
+                    _, n, _ = fit_plane(cell_means(raw))
+                    quality = quality_function(raw, n)
+                    if max(quality['size']) <= .6 and min(quality['size']) >= .12:
+                        seeds.append(dict(mask=mask, normal=n))
+    result = complete_support(grid, seeds, quality_function)
+    return [dict(p, support_origin='plane_conditioned') for p in result
+            if support_quality(grid[p['mask']], p)['eligible']]

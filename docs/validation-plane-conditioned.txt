@@ -1,0 +1,96 @@
+Cam_align v11 — plane-conditioned source support
+2026-10-20 / baseline: 3bb07b1 (69/76 actual board associations)
+
+Verified result
+---------------
+72 matched / ALL 76 captures = 94.7368%; 4 partial, none counted as success.
+All previous 69 matches retained. New matched frames:
+  20260922_093112_477, 20260922_095031_526, 20260922_095141_511.
+These names are evaluation records only, never algorithm inputs or exceptions.
+100% is NOT achieved. This is association, not a claim of pixel-perfect fusion.
+
+Cause and change
+----------------
+Raw range has a slope on an inclined planar surface. Range-gradient components
+can therefore fragment a board, even when the underlying surface is planar.
+After the existing range/pair/metric-neighborhood paths have no structurally
+eligible candidate, the new fallback forms residual r(p)=n dot p-h using each
+independently estimated SOURCE plane. It segments smoothed residual regions,
+then reads original finite XYZ again for the final plane/support measurements.
+
+The filter uses no RGB, RT, presumed camera baseline, fixed image ROI, intensity,
+checkerboard hole pattern, or frame-specific exception. Missing samples are not
+exported or synthesized. No support-quality/association/RANSAC/LM gate is lowered.
+It runs only when prior paths fail, so already successful support stays intact.
+Existing point-plane RANSAC and linear-loss LM remain unchanged.
+
+Measured support, not relabelled partials (before -> after)
+---------------------------------------------------------
+093112_477: points 1382 -> 1976; flatness .1974 -> .1557;
+            quadrilateral support .7313 -> .8575; board cells 85.9 -> 98.4%.
+095031_526: points 687 -> 1306; flatness .3832 -> .1583;
+            board cells 60.9 -> 87.5%.
+095141_511: points 1119 -> 1512; flatness .2481 -> .1828;
+            board cells 84.4 -> 90.6%.
+Points added from the ORIGINAL grid: 640 / 645 / 395, respectively.
+Original source points removed from selected support: 46 / 26 / 2.
+No source XYZ was moved or overwritten. Three before/after views were inspected.
+Nominal-WF footprint sizes remain noisy (e.g. 313x344 mm in the first frame);
+structural correspondence does NOT certify accurate physical dimensions or RT.
+
+Fresh actual-data regression
+----------------------------
+tests/integration/metric_support_audit.py re-read all 76 source/color pairs and
+used exact-input time-block-excluded models from the active v10 RT.
+69 -> 72 matched; 7 -> 4 partial. Only the three listed frames gained candidates.
+All other ordered candidate masks, normals, offsets and centers stayed identical.
+Reports: output/validation/plane_conditioned_20261020/fresh/actual_summary.json.
+
+Recalibration check and active-RT policy
+--------------------------------------
+The new supports also completed a fresh source-only dimension fit, grouped
+RANSAC, LM and four contiguous-time-block calibrations: 72 matched / 4 partial.
+On the SAME original 69 matched supports, with time-block-excluded models:
+  point-plane RMS median: 16.4529 -> 16.4926 mm (slightly worse)
+  boundary error median: 9.2430 -> 9.1249 px
+  outside-board fraction median: 4.3802 -> 4.2741 percent
+This is NOT an all-metrics precision improvement. The existing active v10 RT
+and settings remain unchanged; only detection has been enabled. The selected
+board mask is not used to crop or move RGB-fused points, so active-RT fusion
+coordinates/colors remain unchanged. Future automatic recalibration saves to a
+separate auto_v11_rt.json path instead of overwriting the previous v10 result.
+
+Active v10 RT SHA256:
+93565cbefedeaa1aeddb36d562f46bda6a01191fb80461a9415c92c69519d384
+Settings SHA256:
+5acf75c628a523a1661b7228af1eb4cb342e85ed298c7944044a76ce573b7ca7
+
+Generality and functional checks
+--------------------------------
+The existing synthetic renderer varies position, tilt, FOV 50-110 degrees,
+resolution 160x120/320x240, noise, density and missing samples. Against the
+previous metric fallback, source detections improved 28/32 -> 29/32; no previous
+success regressed and no new eligible candidate appeared in 8 no-board scenes.
+Criterion: >=70% visible measured-point recall and >=95% purity plus unchanged
+structural gates. This synthetic source-detection metric is NOT added to the
+real board-association denominator. Other actual cameras/layouts remain untested.
+
+71 unit tests pass, including tilted support recovery and no-filled-points tests.
+Real Qt integration passed: 76 frames, 72 matched / 4 partial, 35 RT inliers,
+2738 event-loop ticks while working; 9958 saved PLY points exactly matched the
+computed XYZ and sampled RGB. Pixel-depth lookup, view toggles, manual-control
+absence and original RT/settings/annotation preservation also passed.
+The GUI test creates its own RT under output/validation, not the active folder.
+
+Reproduce
+---------
+python -m unittest discover -s tests/unit -v
+python tests/integration/metric_support_audit.py --capture-root <capture-folder>
+    --rt output/calibration/nsl_to_color_wf_range_auto_v10_rt.json
+Set CAM_ALIGN_CAPTURE_ROOT to the capture folder, then:
+python tests/integration/nsl_gui_smoke.py
+
+Development trials and diagnostics are retained, not activated, under
+output/validation/plane_conditioned_20261020/. Raw captures, generated RTs,
+private settings and reports are excluded from GitHub. The existing HTML gets
+one appended explanation section/scene; its earlier records remain available.

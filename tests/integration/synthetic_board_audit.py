@@ -8,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
+from contextlib import ExitStack
 import cv2
 import numpy as np
 
@@ -64,8 +65,10 @@ def audit():
         original = grid.copy()
         variants = {}
         for variant in ('baseline', 'metric_fallback'):
-            context = patch.object(nc, 'metric_support', return_value=[]) if variant == 'baseline' else patch.object(nc, 'metric_support', wraps=nc.metric_support)
-            with context:
+            with ExitStack() as stack:
+                if variant == 'baseline':
+                    stack.enter_context(patch.object(nc, 'metric_support', return_value=[]))
+                    stack.enter_context(patch.object(nc, 'plane_conditioned_support', return_value=[]))
                 planes = nc.nsl_plane_candidates(grid.reshape(-1, 3)*1000, grid.shape[:2])
             eligible = [p for p in planes if support_quality(grid[p['mask']], p)['eligible']]
             scored = [(np.count_nonzero(p['mask'] & truth)/max(1, truth.sum()),
