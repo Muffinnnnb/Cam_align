@@ -26,7 +26,7 @@ def main():
     if not DEFAULT_CAPTURE_ROOT.is_dir() or not rt_path.is_file():
         raise SystemExit('260922 촬영 폴더를 CAM_ALIGN_CAPTURE_ROOT로 지정하고 '
                          'output/calibration/nsl_to_color_wf_range_auto_v5_rt.json을 준비하세요.')
-    out=output_dir('validation')/'gui_smoke'
+    out=Path(os.environ.get('CAM_ALIGN_GUI_TEST_OUTPUT', str(output_dir('validation')/'gui_smoke')))
     out.mkdir(parents=True,exist_ok=True)
     originals=list(output_dir('calibration').glob('*.json'))+list(output_dir('annotations').glob('*.json'))+[APP_DIR/'nsl_color_settings.ini']
     hashes={p:sha256(p.read_bytes()).hexdigest() for p in originals if p.is_file()}
@@ -60,13 +60,18 @@ def main():
     c.point_plane_result_path=lambda:out/'automatic_rt.json'
     errors=[];ticks=[]
     timer=QTimer();timer.timeout.connect(lambda:ticks.append(time.monotonic()));timer.start(100)
+    selected_before_batch=c.window.fileList.currentItem().text()
+    cold_started=time.monotonic()
     c.run_calibration();c.worker.failed.connect(errors.append)
     deadline=time.monotonic()+1500
     while c.worker_thread is not None and time.monotonic()<deadline:
         app.processEvents();time.sleep(.01)
     timer.stop()
     assert c.worker_thread is None,'worker timeout'
-    wait_frame()
+    cold_seconds=time.monotonic()-cold_started
+    assert c.frame_thread is None, 'Completed batch must NOT launch another detection'
+    assert c.current_stamp==selected_before_batch, 'Finished frame was not handed to the GUI'
+    assert '촬영쌍이 없습니다' not in c.window.pickedDepthLabel.text()
     assert not errors,errors
     assert len(ticks)>20,'GUI event loop was not responsive'
     used=set(c.result['ransac_inlier_frames'])
@@ -79,6 +84,19 @@ def main():
     assert len(c.result['board_identity_models'])==4
     assert len(c.statuses)==76
     assert c.window.inputGroup.isEnabled() and c.window.calibrateButton.isEnabled()
+    # Reinspection should reuse source analysis but recompute RT decisions.
+    misses=c.analysis_cache.misses
+    warm_started=time.monotonic()
+    c.validate_all();c.worker.failed.connect(errors.append)
+    deadline=time.monotonic()+180
+    while c.worker_thread is not None and time.monotonic()<deadline:
+        app.processEvents();time.sleep(.005)
+    warm_seconds=time.monotonic()-warm_started
+    assert c.worker_thread is None and not errors
+    assert c.frame_thread is None and c.current_stamp==selected_before_batch
+    assert c.analysis_cache.misses==misses, 'Unchanged inputs were analyzed again'
+    assert '촬영쌍이 없습니다' not in c.window.pickedDepthLabel.text()
+    assert sum(v['state']=='candidate' for v in c.statuses.values())==76
     stamp='20260922_093209_224'
     c.window.fileList.setCurrentItem(c.window.fileList.findItems(stamp,Qt.MatchExactly)[0])
     wait_frame()
@@ -157,6 +175,8 @@ def main():
     report={'input':len(c.pairs),'used':len(used),'association_states':states,
             'training_history_matches_rt':True,'rgb_exact_points':len(saved),
             'event_loop_ticks':len(ticks),'frame_event_loop_ticks':len(selection_ticks),
+            'cold_calibration_seconds':cold_seconds,'warm_inspection_seconds':warm_seconds,
+            'no_post_completion_redetection':True,'no_false_empty_message':True,
             'no_manual_controls':True,'old_rt_and_annotations_preserved':True}
     (out/'report.json').write_text(json.dumps(report,indent=2),'utf-8')
     print(report,flush=True)

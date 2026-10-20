@@ -1,0 +1,92 @@
+Analysis reuse and completion-display fix (2026-10-20)
+======================================================
+
+Cause
+-----
+CalibrationWorker returned statuses, but discarded analyzed frames. The GUI
+cleared its frame cache on job completion and immediately started a second
+analysis of the selected capture. request_frame called clear_view, whose
+default message said that no capture pairs existed. Thus a real completed job
+was followed by unnecessary analysis and a false empty-list message.
+
+Changes
+-------
+The worker hands the completed selected frame directly to the GUI. Inspection
+and recalibration use the same handoff. Loading, empty input and failure have
+separate messages. Failed jobs are not silently retried by the completion slot.
+Single-frame RT association also runs in the worker, not on the GUI thread.
+The redundant second association pass after calibrate_nsl_color was removed;
+calibration already associates every frame before returning.
+
+AnalysisCache stores only analyze_pair's RT-independent output. Content SHA256
+covers Color, PCD, the WF range map when used, intrinsics/distortion, input
+paths, timestamp, Z limits, geometry mode, Python/NumPy/OpenCV/SciPy versions
+and local Python source files. It
+does not use filename/mtime as a substitute for content. Edited inputs miss
+the cache even if their original size and mtime are restored. Restart the app
+after code/dependency updates; live replacement of imported Python is not a
+supported workflow.
+
+The application keeps 12 raw analyses in memory and at most 1 GiB of dedicated
+disk cache at output/cache/nsl_analysis. NPZ + JSON uses allow_pickle=False;
+arrays are losslessly compressed, and a copy isolates cached input from later
+RT decisions. Cache read/write failures fall back to ordinary analysis.
+Only regenerable files inside that dedicated cache are eligible for eviction.
+Original captures, settings and RTs are not changed by cache management.
+
+No source detector, candidate order, structural threshold, RANSAC trials,
+LM objective or held-out fit was reduced/changed. New input still requires
+the original full analysis; new RTs still require optimization and validation.
+Reusing detections does NOT mean reusing an old RT verdict or RGB projection.
+
+Reproduce
+---------
+python -m unittest discover -s tests/unit -q
+Set CAM_ALIGN_CAPTURE_ROOT to a compatible capture directory, then:
+python tests/integration/nsl_gui_smoke.py
+python tests/integration/nsl_cache_audit.py --capture-root <capture-directory>
+  --rt <matching-rt.json>
+
+The optional Qt test uses a separate output folder through
+CAM_ALIGN_GUI_TEST_OUTPUT. It checks all 76 captures, completed-frame handoff,
+no second detection, no false empty message, warm-cache reuse, unchanged
+source/target behavior, view toggles, depth clicks, and exact RGB PLY samples.
+The timing audit compares identical source-analysis calls on uniform sample
+positions, including all candidate/training signatures and projected XYZ/RGB.
+It does not compare full calibration time with inspection-only time as if
+those were equivalent jobs.
+
+Measured results
+----------------
+94 unit tests passed, including content changes with identical size/mtime,
+range/model/code invalidation, corrupt/full-disk cache fallback, memory and
+disk limits, mutation isolation, and exact candidate-index restoration when
+two candidates have identical masks but different evidence.
+
+The full real Qt test reread 76 captures and recalibrated: 76 matched, zero
+partials/unconfirmed/failed; 35 training inliers. The RT matrix, all 35 inlier
+names and four held-out R/t models exactly match the prior checkpoint.
+All 9,958 exported RGB/XYZ samples matched their computed originals. Existing
+RTs/settings were preserved. Completed selection appeared without starting
+another detection and without a false empty-list message. Cached inspection
+of all 76 took 6.172 seconds. Full cold calibration took 667.438 seconds, but
+these are DIFFERENT jobs and are not a valid speedup comparison.
+
+After final candidate-index serialization hardening, five uniformly spaced
+captures were reanalyzed without cache and then loaded from disk cache:
+  source analysis, 5 captures: 26.620917 seconds
+  lossless disk loads, same 5:  0.306508 seconds
+  means: 5.324 seconds -> 0.061 seconds (analysis/loading stage only)
+  first-use cache writes: 0.081 to 0.151 seconds per capture (extra cost)
+All candidate/training signatures and projected RGB/XYZ matched exactly.
+The final-format real Qt smoke test also passed warm inspection/finished
+frame handoff, real loading text, missing-file failure without retry, and a
+genuinely empty capture list. Timings depend on hardware and workload; initial
+analysis and RT optimization were not accelerated by changing their criteria.
+
+Existing HTML extended in place; 11 motion scenes preserved. Desktop and
+375/320 px layouts and JavaScript checks passed; the new section was rendered
+and inspected. Original README.md edits and docs/how-it-works.html were not
+part of this change. Local diagnostics: output/validation/gui_cache_20261020
+and output/validation/cache_ui. No capture, cache, RT, PLY or local setting is
+included in the Git commit.

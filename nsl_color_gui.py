@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from time import perf_counter
 
 import cv2
 import numpy as np
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog
 
 from app_logging import get_log_path, get_logger, install_exception_hook
 from app_paths import calibration_input, output_dir
+from nsl_analysis_cache import AnalysisCache
 from fuse_color_pointcloud import DEFAULT_CAPTURE_ROOT, DEFAULT_COLOR_CAL, capture_pairs, load_camera, load_rt
 from nsl_geometry import GEOMETRY_MODES, GEOMETRY_LABELS, rt_geometry, fusion_block_reason
 from nsl_color_calibration import (
@@ -34,14 +36,19 @@ class FrameWorker(QObject):
     failed = Signal(str, str)
     done = Signal()
 
-    def __init__(self, pair, color_cal, z_min, z_max, geometry):
+    def __init__(self, pair, color_cal, z_min, z_max, geometry, cache=None, calibration=None):
         super().__init__()
         self.args = pair, color_cal, z_min, z_max, geometry
+        self.cache, self.calibration = cache, calibration
 
     def run(self):
         stamp = self.args[0]['timestamp']
         try:
-            self.succeeded.emit(stamp, analyze_pair(*self.args))
+            frame = (self.cache.analyze(*self.args, analyze_pair) if self.cache is not None
+                     else analyze_pair(*self.args))
+            if self.calibration:
+                select_plane_for_rt(frame, self.calibration, self.args[1])
+            self.succeeded.emit(stamp, frame)
         except Exception as exc:
             LOGGER.exception('frame analysis failed stamp=%s', stamp)
             self.failed.emit(stamp, str(exc))
@@ -53,12 +60,12 @@ class CalibrationWorker(QObject):
     progress = Signal(int, int, str, bool, bool)
     stage = Signal(str)
     status = Signal(str, object)
-    succeeded = Signal(object, object)
+    succeeded = Signal(object, object, object)
     failed = Signal(str)
     done = Signal()
 
     def __init__(self, pairs, color_cal, z_min, z_max, result_path, capture_root,
-                 calibration=None, inspect_only=False, geometry='pcd'):
+                 calibration=None, inspect_only=False, geometry='pcd', cache=None, preview_stamp=None):
         super().__init__()
         self.pairs = pairs
         self.color_cal = Path(color_cal)
@@ -69,16 +76,19 @@ class CalibrationWorker(QObject):
         self.calibration = calibration
         self.inspect_only = inspect_only
         self.geometry = geometry
+        self.cache, self.preview_stamp = cache, preview_stamp
 
     def run(self):
+        started = perf_counter()
         try:
             frames, statuses = {}, {}
+            preview = None
             total = len(self.pairs)
             for index, pair in enumerate(self.pairs, 1):
                 try:
-                    frame = analyze_pair(
-                        pair, self.color_cal, self.z_min, self.z_max, self.geometry
-                    )
+                    args = pair, self.color_cal, self.z_min, self.z_max, self.geometry
+                    frame = (self.cache.analyze(*args, analyze_pair) if self.cache is not None
+                             else analyze_pair(*args))
                     if not self.inspect_only:
                         frames[pair["timestamp"]] = frame
                     source_ok = frame['source_plane'] is not None
@@ -86,6 +96,8 @@ class CalibrationWorker(QObject):
                     if self.inspect_only and self.calibration:
                         select_plane_for_rt(frame, self.calibration, self.color_cal)
                     statuses[pair["timestamp"]] = plane_status(frame, self.calibration if self.inspect_only else None)
+                    if pair['timestamp'] == self.preview_stamp:
+                        preview = frame
                 except Exception:
                     LOGGER.exception(
                         "bulk analysis failed stamp=%s", pair["timestamp"]
@@ -105,9 +117,13 @@ class CalibrationWorker(QObject):
                     progress=self.stage.emit,
                 )
                 for stamp, frame in frames.items():
-                    select_plane_for_rt(frame, result, self.color_cal)
+                    # calibrate_nsl_color already associates every frame to result.
                     statuses[stamp] = plane_status(frame, result)
-            self.succeeded.emit(result, statuses)
+            self.succeeded.emit(result, statuses, preview)
+            LOGGER.info('NSL job finished inspect_only=%s pairs=%d elapsed=%.3fs cache_hits=%s cache_misses=%s',
+                        self.inspect_only, total, perf_counter()-started,
+                        self.cache.hits if self.cache is not None else 0,
+                        self.cache.misses if self.cache is not None else total)
         except Exception as exc:
             LOGGER.exception("NSL->Color calibration worker failed")
             self.failed.emit(str(exc))
@@ -160,6 +176,8 @@ class Controller(QObject):
         self.frame_thread = self.frame_worker = None
         self.requested_stamp = None
         self.pending_job = None
+        self.analysis_cache = AnalysisCache()
+        self.batch_error = None
 
         self.window.captureRootEdit.setText(str(self.capture_root))
         self.window.colorCalEdit.setText(str(self.color_cal))
@@ -391,12 +409,13 @@ class Controller(QObject):
 
     def request_frame(self, stamp):
         self.requested_stamp = stamp
-        self.clear_view()
+        self.clear_view(f'촬영쌍 로딩 중: {stamp}')
         self.window.detectionStatus.setText(f'원본 3D 평면 분석 중: {stamp}')
         if self.frame_thread is not None:
             return  # Latest selection wins; do not launch unbounded workers.
         thread = QThread(self)
-        worker = FrameWorker(self.pair_by_stamp[stamp], self.color_cal, self.z_min, self.z_max, self.geometry)
+        worker = FrameWorker(self.pair_by_stamp[stamp], self.color_cal, self.z_min, self.z_max,
+                             self.geometry, self.analysis_cache, self.result)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.succeeded.connect(self.frame_ready)
@@ -412,8 +431,6 @@ class Controller(QObject):
 
     def frame_ready(self, stamp, frame):
         try:
-            if self.result:
-                select_plane_for_rt(frame, self.result, self.color_cal)
             if len(self.frames) >= 12:
                 self.frames.pop(next(iter(self.frames)))
             self.frames[stamp] = frame
@@ -427,6 +444,7 @@ class Controller(QObject):
         self.apply_status(stamp, {'state': 'failed', 'message': f'분석 실패: {error}'})
         if stamp == self.requested_stamp:
             self.requested_stamp = None
+            self.clear_view(f'촬영쌍 분석 실패: {error}')
             self.window.detectionStatus.setText(f'분석 실패: {error}')
 
     def frame_finished(self):
@@ -469,14 +487,14 @@ class Controller(QObject):
         LOGGER.warning('NF comparison opt-in=%s capture=%s rt=%s', checked, self.capture_root, self.result_path)
         self.refresh_view()
 
-    def clear_view(self):
+    def clear_view(self, message='표시할 촬영쌍이 없습니다.'):
         self.current_depth = self.current_stamp = None
         self.images.clear()
         for label in (self.window.sourceImageLabel, self.window.targetImageLabel):
             label.clear()
         self.window.planeText.clear()
         self.window.rtCheckStatus.clear()
-        self.window.pickedDepthLabel.setText("표시할 촬영쌍이 없습니다.")
+        self.window.pickedDepthLabel.setText(message)
         self.update_controls()
 
     def update_controls(self):
@@ -563,7 +581,7 @@ class Controller(QObject):
         except Exception as exc:
             LOGGER.exception("show frame failed stamp=%s", stamp)
             self.window.detectionStatus.setText(f"표시 실패: {exc}")
-            self.clear_view()
+            self.clear_view(f'촬영쌍 표시 실패: {exc}')
             self.apply_status(stamp, {"state": "failed", "message": f"표시 실패: {exc}"})
 
     def status_text(self, frame):
@@ -723,10 +741,13 @@ class Controller(QObject):
         self.settings.setValue("input/z_max", self.z_max)
         self.settings.sync()
         self.frames.clear()
+        self.batch_error = None
         thread = QThread(self)
         worker = CalibrationWorker(
             list(self.pairs), self.color_cal, self.z_min, self.z_max,
-            self.result_path if inspect_only else self.point_plane_result_path(), self.capture_root, self.result, inspect_only, self.geometry)
+            self.result_path if inspect_only else self.point_plane_result_path(), self.capture_root,
+            self.result, inspect_only, self.geometry, self.analysis_cache,
+            self.window.fileList.currentItem().text() if self.window.fileList.currentItem() else None)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.progress.connect(self.calibration_progress)
@@ -767,13 +788,18 @@ class Controller(QObject):
             items[0].setBackground(QColor("#ffd6d6"))
             items[0].setForeground(QColor("#8b0000"))
 
-    def calibration_succeeded(self, result, statuses):
+    def calibration_succeeded(self, result, statuses, preview):
         self.result = result
         if not self.worker.inspect_only:
             self.result_path = self.worker.result_path
             self.settings.setValue(f'rt/{self.geometry}', str(self.result_path))
             self.settings.sync()
         self.frames.clear()
+        if preview is not None:
+            # Transfer the finished frame, not just its status. No second detection.
+            preview.pop('aligned_depth', None)
+            preview.pop('_color_projection', None)
+            self.frames[preview['timestamp']] = preview
         for stamp, status in statuses.items():
             self.apply_status(stamp, status)
         self.show_matrix()
@@ -789,6 +815,7 @@ class Controller(QObject):
         LOGGER.info("%s matched_rate=%.6f denominator=%s partial_excluded=True counts=%s", action, rate, total, counts)
 
     def calibration_failed(self, error):
+        self.batch_error = error
         self.window.calibrationStatus.setText(
             f"실패: {error} / 로그: {get_log_path()}"
         )
@@ -797,9 +824,17 @@ class Controller(QObject):
         self.set_busy(False)
         self.window.progressBar.setVisible(False)
         self.worker_thread = self.worker = None
-        self.window.statusbar.showMessage(f"계산 종료 / 로그: {get_log_path()}")
-        self.refresh_view()
+        item = self.window.fileList.currentItem()
+        error = self.statuses.get(item.text(), {}) if item else {}
+        if self.batch_error:
+            self.clear_view(f'처리 실패: {self.batch_error}')
+        elif item and error.get('state') == 'failed' and item.text() not in self.frames:
+            self.clear_view(error.get('message', '촬영쌍 분석 실패'))
+        else:
+            self.refresh_view()
         self.update_controls()
+        self.window.statusbar.showMessage(
+            f"{'처리 실패' if self.batch_error else '처리 완료'} / 로그: {get_log_path()}")
 
     def show_matrix(self):
         if not self.result:
