@@ -35,6 +35,15 @@ def cell_means(points, bins=8):
     lo, hi = np.percentile(uv, [1, 99], axis=0)
     cells = np.clip(((uv-lo)/np.maximum(hi-lo, 1e-9)*bins).astype(int), 0, bins-1)
     key = cells[:, 1]*bins+cells[:, 0]
+    if points.dtype == np.float64 and points.shape[1] == 3:
+        # Same occupied cells, order and per-cell weights; no point subsampling.
+        # Accumulate once instead of scanning/copying every point for each cell.
+        count = np.bincount(key)
+        occupied = count > 0
+        sums = np.column_stack([np.bincount(key, weights=points[:, axis])
+                                for axis in range(3)])
+        return sums[occupied]/count[occupied, None]
+    # Preserve the original accumulation precision for float32/other inputs.
     return np.array([points[key == k].mean(0) for k in np.unique(key)])
 
 

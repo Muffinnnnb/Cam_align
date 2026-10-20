@@ -1,0 +1,136 @@
+Uncached analysis optimization (2026-10-21)
+==========================================
+
+Scope and cause
+---------------
+The prior cache update accelerated reuse, not analysis of previously unseen
+input. A five-capture profile attributed 40.892 of 41.162 cumulative seconds
+to NSL plane-candidate detection. cell_means accounted for 10.684 seconds and
+9,746 calls (nested profile times overlap; do not add them together).
+The RGB checkerboard detector and file reads were not the dominant cost.
+
+Adopted change
+--------------
+For float64 XYZ, accumulate each coordinate by cell index using bincount,
+then divide by the cell count. The original implementation scanned/copied the
+whole point array separately for every occupied cell. Both implementations
+return occupied cells in ascending index order, with the same per-cell mean
+and equal spatial weight. The PCA axes, percentiles, cell assignment, input
+samples, candidate order and downstream fits are unchanged.
+Other data types and non-XYZ shapes retain the original reduction, preserving
+float32 accumulation semantics. This is not an image/result cache and needs
+no previous image, calibration pose, camera layout or filename-specific rule.
+
+No RANSAC count, LM objective, structural threshold, correspondence criterion,
+source correction or held-out test has been relaxed. No fallback detector was
+skipped. OpenCV thread counts are unchanged: the preliminary one-thread trial
+was slower on three of five inputs, so it was not adopted. Batch parallelism
+and shared detection contexts remain separate, unimplemented possibilities.
+
+Validation method
+-----------------
+tests/cold_analysis_reference.py freezes the e413ca3 reduction. Its test-only
+context patches every importing alias, including projection fitting. Every
+capture is analyzed by both versions without AnalysisCache, with alternating
+order. Compare all raw frame fields and candidate masks/attributes, then
+association with a fixed matching RT, every projected sample and the serialized
+PLY bytes. No success count substitutes for this numerical comparison.
+Timing excludes association, projection, PLY saving and assertions. OS file
+caching is not disabled. There is one paired pass of all inputs, not a latency
+guarantee or proof about another physical camera. A separate repeated subset
+can check run-to-run variation.
+
+The synthetic audit compares the same full detector before/after at varied
+FOVs (50-110 degrees), sensor poses, ranges, noise and dropout, including scenes
+with no board. Its 70% visible-point recall / 95% purity scoring is a synthetic
+detection diagnostic, NOT the production full-board correspondence numerator.
+
+The real Qt regression uses an isolated cache/settings/output directory and
+optionally compares the recalculated R/t, inlier names, source correction and
+all four held-out models against a pre-change checkpoint. It also exercises
+completed-frame handoff, loading/empty states, depth clicks and RGB/intensity
+PLY exports. Existing RTs, annotations and settings are hash checked.
+
+Measured results
+----------------
+Environment: Windows, Python 3.12.10, NumPy 2.5.3, OpenCV 5.0.0 (8 threads),
+SciPy 1.18.1. Existing 260922 captures, WF range reconstruction, Z 0.1-20 m,
+cal/c intrinsics. Fixed association reference: the pre-change v13 Qt result
+at output/validation/gui_cache_20261020/automatic_rt.json.
+
+All 76 raw frames and candidate fields matched exactly, as did their RT
+decisions and every projected sample. Full-board correspondence stayed 76/76;
+partials did not enter the numerator. 806,518 projected XYZ/RGB samples and
+all paired binary PLY payloads were identical.
+
+                        Before             After
+76-frame analysis sum   427.395341 s        369.896086 s
+per-frame mean            5.623623 s          4.867054 s
+per-frame median          5.686671 s          4.935906 s
+per-frame P95             8.382241 s          7.381629 s
+
+Total analysis time decreased 13.5%; median paired reduction was 13.8%.
+74 inputs were faster in this pass; two were slower. Repeat both exceptions
+alongside five uniformly selected inputs, twice, with alternating order:
+all 14 paired trials were faster and numerically identical; total time
+93.376803 -> 80.078571 s, median paired reduction 14.6%.
+The two exceptions (094822_830 and 094909_462) were faster in BOTH repeats.
+This is consistent with timing variability, not evidence of a persistent
+per-input slowdown. The 7-input follow-up is not a new independent dataset.
+
+103 unit tests passed, including 306 reduction dtype/layout/shape subcases.
+The first sandboxed test run encountered temporary-directory permissions;
+the complete suite was rerun successfully in local Python without exclusions.
+Synthetic seed 51021: every candidate field matched in all 40 scenes. Both
+versions detected 26/32 board scenes under the synthetic scoring rule; one of
+8 no-board scenes had a structurally eligible source candidate in BOTH versions.
+No new miss or candidate false positive was introduced. This is NOT 40/40
+successful detections, and a source candidate is not final RGB/RT association.
+The first synthetic audit attempt hit NumPy-bool JSON serialization in the
+test report; the explicit bool conversion was fixed and all 40 cases rerun.
+The real Qt test recalibrated all 76 captures: 76 matched, 0 partial,
+0 unconfirmed, 0 failed; 35 training inliers. R/t, all inlier names, source-ray
+correction and all four held-out models exactly matched the pre-change result.
+The completed frame appeared without a second analysis or false empty message.
+Depth clicks, view toggles, RGB/intensity/source PLY and projection PNG passed;
+all 9,958 samples in the selected exported RGB PLY matched computed XYZ/RGB.
+Existing calibration, annotation and settings hashes were preserved.
+
+This Qt functional run took 597.687 seconds for its batch calibration and
+9.656 seconds for warm inspection. It ran partly concurrently with synthetic
+tests, and the batch reused three frames opened earlier in the same fresh test
+session. These times are NOT used to claim a full-calibration speedup against
+older runs. Only the isolated paired analysis audit supports the 13.5% claim.
+
+Local evidence: output/validation/cold_optimized_20261021/{full,repeated,
+synthetic,gui}. The timing plot is generated from the full audit JSON, not
+illustrative numbers. The existing HTML was appended in place; its earlier
+sections and entire animation script remain unchanged, with valid JS syntax.
+Original README.md edits and unrelated documents are not part of this commit.
+
+Reproduction
+------------
+python -m unittest discover -s tests/unit -q
+python tests/integration/cold_analysis_audit.py --capture-root <captures>
+  --rt <matching-rt.json> --output output/validation/cold/full
+python tests/integration/cold_analysis_audit.py --synthetic --seed 51021
+  --output output/validation/cold/synthetic
+For a repeated timing subset, add --samples 5 --repeats 3 to the capture audit.
+Use --include-stamp <timestamp> to include a specific timing exception alongside
+the uniform subset; it affects only this test, not production detection.
+For the optional real Qt regression, set CAM_ALIGN_CAPTURE_ROOT,
+CAM_ALIGN_GUI_TEST_OUTPUT to a fresh directory and CAM_ALIGN_GUI_REFERENCE_RT
+to the matching pre-change full calibration, then run:
+python tests/integration/nsl_gui_smoke.py
+
+Restart the application after updating Python source; live module replacement
+is not supported. Existing analysis caches automatically miss when source
+content changes. The first post-update analysis therefore still takes seconds;
+it should not be compared with a prior warm-cache reload as a regression.
+
+Research log
+------------
+The existing Notion research notebook is updated in chronological order;
+AGENTS.md records the user's instruction to update it with each implemented
+project change. Preserve old entries/images and distinguish measurements from
+proposals. No recurring scheduler or automatic external-data upload was added.

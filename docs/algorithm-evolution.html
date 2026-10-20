@@ -116,7 +116,12 @@
 <div class="findings"><article><h3>1. 크기와 모양 선택</h3><p>투영·잔차 보기에서만 조절줄이 나타납니다. 원본 Color 픽셀 기준 1~21 px의 홀수 크기와 점(●)·십자(+)를 선택합니다. 설정은 자동 저장되며 투영 PNG 저장에도 같은 모양을 적용합니다.</p></article><article><h3>2. 사진과 거리 색상</h3><p>점 색은 기존 거리 색상이고 원본 사진 위에 반투명하게 표시합니다. 가림 검사를 통과한 실제 점만 사용하며 확대된 표시끼리 겹치면 가까운 점을 우선합니다. 잔차 보기에서는 기존 오차 색상을 유지합니다.</p></article><article><h3>3. 데이터는 바꾸지 않기</h3><p>크기는 표시용 기호의 크기일 뿐입니다. 빈 픽셀에 깊이를 채우거나 XYZ·RT·RGB PLY 색을 바꾸지 않습니다. 깊이는 실제 투영 중심 픽셀에만 존재하므로 확대된 십자 팔을 클릭하면 “매칭 없음”일 수 있습니다.</p></article></div>
 <p class="muted">실측 Qt 시험에서 9,030점 투영, 크기·모양 변경, 설정 복원, PNG와 화면 원본 픽셀 일치, XYZ/RGB/RT 및 깊이맵 불변을 확인했습니다. 표시 변경은 재분석을 실행하지 않습니다. 이 시험의 투영/잔차 화면 갱신은 약 40~70 ms였으며 전체 분석·보정의 처리 시간이나 정합 정확도를 뜻하지 않습니다. <a href="validation-point-overlay.txt">검증 조건과 101개 단위 테스트 결과</a></p>
 </section>
-</main><footer>Cam_align · 오프라인 실행 가능 · 외부 라이브러리·추적·네트워크 요청 없음<br>2026-10-20 검증. 원본 촬영·점군·RT·개인 설정은 GitHub에 포함하지 않습니다. 코드: <a href="https://github.com/Muffinnnnb/Cam_align">Muffinnnnb/Cam_align</a></footer>
+<section id="cold-analysis" class="chapter"><div class="eyebrow">Added · 2026-10-21 · uncached computation</div><h2>처음 읽는 점군도 — 같은 평균을 더 적은 반복으로</h2>
+<p class="muted">앞선 캐시는 이미 분석한 촬영을 다시 볼 때의 개선이었습니다. 이번 변경은 저장된 결과가 없어도 실행되는 평면 검출 계산 자체를 줄입니다. 보드 판정 기준이나 RT 학습 입력을 줄이는 방법이 아닙니다.</p>
+<div class="findings"><article><h3>1. 셀마다 전체 점을 다시 검색</h3><p>기존에는 각 공간 셀의 평균을 구할 때마다 전체 점 배열에서 해당 점을 골라 복사했습니다. 같은 작업이 평면 후보와 재피팅 단계마다 반복됐습니다.</p></article><article><h3>2. 셀 번호로 한꺼번에 집계</h3><p>float64 XYZ의 각 좌표를 셀 번호별로 더하고 점 개수로 나눕니다. 모든 원본 점을 사용하며, 셀 구분·출력 순서·셀별 균등 가중치는 그대로입니다. 다른 자료형은 기존 계산을 유지합니다.</p></article><article><h3>3. 빠른지와 같은지를 따로 확인</h3><p>캐시 없이 같은 촬영을 전후 버전으로 번갈아 실행합니다. 성공 개수만 비교하지 않고 모든 후보·마스크·법선·대응·RGB/XYZ·PLY 내용을 비교하며, RT 재계산과 합성 장면도 별도로 검사합니다.</p></article></div>
+<p class="muted" id="cold-analysis-results">실제 76장 무캐시 분석 합계: <b>427.4초 → 369.9초, 13.5% 단축</b>. 모든 후보 값·76/76 보드 대응·806,518개 투영점·PLY 내용은 전후 같았습니다. 합성 40장에서도 결과가 모두 같았지만 검출 성공률 100%를 뜻하지는 않습니다. 전체 RT 계산 시간의 단축률이나 다른 실측 카메라 검증으로 확대 해석하지 않습니다. <a href="validation-cold-analysis.txt">반복 측정·합성·Qt 검증과 재현 조건</a>. 기존 모션 장면과 이전 연구 이력은 그대로 보존했습니다.</p>
+</section>
+</main><footer>Cam_align · 오프라인 실행 가능 · 외부 라이브러리·추적·네트워크 요청 없음<br>2026-10-21 업데이트. 원본 촬영·점군·RT·개인 설정은 GitHub에 포함하지 않습니다. 코드: <a href="https://github.com/Muffinnnnb/Cam_align">Muffinnnnb/Cam_align</a></footer>
 </div>
 <script>
 (()=>{'use strict';

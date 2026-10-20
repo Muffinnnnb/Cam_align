@@ -4,6 +4,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import json
 import sys
 import time
+from functools import partial
 from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
@@ -18,6 +19,7 @@ from app_paths import APP_DIR, output_dir
 from fuse_color_pointcloud import DEFAULT_CAPTURE_ROOT
 from nsl_color_gui import Controller
 from nsl_color_calibration import project_to_color
+from nsl_analysis_cache import AnalysisCache
 from nsl_geometry import corrected_points
 
 
@@ -36,7 +38,10 @@ def main():
     settings=QSettings(str(out/'settings.ini'),QSettings.IniFormat)
     settings.clear();settings.setValue('input/geometry','wf_range');settings.sync()
     settings.setValue('input/capture_root', str(DEFAULT_CAPTURE_ROOT));settings.sync()
-    c=Controller(result_path=rt_path,settings_path=out/'settings.ini',auto_validate=False)
+    # Isolate test cache from the user's cache; use a fresh output directory for
+    # a cold run. Repeated runs in the same directory intentionally stay warm.
+    with patch('nsl_color_gui.AnalysisCache', partial(AnalysisCache, folder=out/'analysis_cache')):
+        c=Controller(result_path=rt_path,settings_path=out/'settings.ini',auto_validate=False)
     c.window.show();app.processEvents()
     selection_ticks=[]
     selection_timer=QTimer();selection_timer.timeout.connect(lambda:selection_ticks.append(time.monotonic()))
@@ -83,6 +88,11 @@ def main():
     assert states['partial'] == 0, 'Do not include partials in the 100% numerator'
     assert len(c.result['board_identity_models'])==4
     assert len(c.statuses)==76
+    reference_path=os.environ.get('CAM_ALIGN_GUI_REFERENCE_RT')
+    if reference_path:
+        reference=json.loads(Path(reference_path).read_text(encoding='utf-8'))
+        for key in ('R','t','ransac_inlier_frames','source_ray_correction','board_identity_models'):
+            assert c.result[key]==reference[key], f'Reference RT field changed: {key}'
     assert c.window.inputGroup.isEnabled() and c.window.calibrateButton.isEnabled()
     # Reinspection should reuse source analysis but recompute RT decisions.
     misses=c.analysis_cache.misses
@@ -178,6 +188,7 @@ def main():
             'cold_calibration_seconds':cold_seconds,'warm_inspection_seconds':warm_seconds,
             'no_post_completion_redetection':True,'no_false_empty_message':True,
             'no_manual_controls':True,'old_rt_and_annotations_preserved':True}
+    report['reference_rt_exact']=bool(reference_path)
     (out/'report.json').write_text(json.dumps(report,indent=2),'utf-8')
     print(report,flush=True)
     selection_timer.stop()
