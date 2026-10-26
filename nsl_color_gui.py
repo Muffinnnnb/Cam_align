@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from time import perf_counter
 
@@ -10,9 +9,9 @@ import numpy as np
 from PySide6.QtCore import QEvent, QObject, QSettings, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QFileDialog
+from PySide6.QtWidgets import QFileDialog
 
-from app_logging import get_log_path, get_logger, install_exception_hook
+from app_logging import get_log_path, get_logger
 from app_paths import calibration_input, output_dir
 from nsl_analysis_cache import AnalysisCache
 from fuse_color_pointcloud import DEFAULT_CAPTURE_ROOT, DEFAULT_COLOR_CAL, capture_pairs, load_camera, load_rt
@@ -226,9 +225,12 @@ class Controller(QObject):
             self.capture_root, self.color_cal, self.geometry, self.result_path if self.result else None,
         )
 
+    def is_busy(self):
+        return self.worker_thread is not None or self.frame_thread is not None
+
     def eventFilter(self, obj, event):
         try:
-            if event.type() == QEvent.Close and obj == self.window and (self.worker_thread is not None or self.frame_thread is not None):
+            if event.type() == QEvent.Close and obj == self.window and self.is_busy():
                 event.ignore()
                 self.window.statusbar.showMessage("실행 중인 검사/계산 완료 후 창을 닫아주세요.")
                 return True
@@ -582,7 +584,7 @@ class Controller(QObject):
             target_view = frame["color"] if rgb_view else color_plane_view(
                 frame["color"], frame["target_plane"]
             )
-            target_title = 'RealSense Color 체스보드 평면'
+            target_title = 'Color 체스보드 평면'
             if view_mode == 2 and can_fuse:
                 target_view, count = projection_view(frame, self.result, self.color_cal, **self.projection_style())
                 target_title = f'Color 위 점군 투영 ({count:,}점 · 거리 색상, RGB PLY 아님)'
@@ -869,7 +871,7 @@ class Controller(QObject):
             return
         rt = np.asarray(self.result["RT"])
         text = (
-            "NSL PointCloud → RealSense Color RT\n"
+            "NSL PointCloud → Color RT\n"
             + GEOMETRY_LABELS[GEOMETRY_MODES.index(self.geometry)] + '\n'
             + np.array2string(rt, precision=9, suppress_small=False)
             + f"\n\nplanes={self.result.get('plane_pairs', 0)}, "
@@ -1031,11 +1033,8 @@ class Controller(QObject):
 
 
 def main():
-    install_exception_hook(LOGGER)
-    app = QApplication(sys.argv)
-    controller = Controller()
-    controller.window.show()
-    sys.exit(app.exec())
+    from app import main as launch
+    launch('pointcloud')
 
 
 if __name__ == "__main__":

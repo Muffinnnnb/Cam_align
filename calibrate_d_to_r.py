@@ -8,16 +8,19 @@ import numpy as np
 from scipy.optimize import least_squares
 
 from app_logging import get_logger
-from app_paths import output_dir
+from app_paths import CAL_DIR, output_dir
 
 
-ROOT = Path(__file__).parent / "cal"
+ROOT = CAL_DIR
 RESULT_PATH = output_dir("calibration") / "d_to_r_rt.json"
 DEFAULT_DEPTH_DIR = ROOT / "d"
 DEFAULT_TARGET_DIR = ROOT / "r"
-PATTERN = (7, 8)                 # inner corners
-SQUARE_M = .03
-BOARD_M = (.25, .28)
+# Shared physical target specification. Not detection/accuracy thresholds.
+# Changing the physical target requires a new calibration and validation.
+PATTERN = (7, 8)                 # inner corners, columns x rows
+SQUARE_M = .03                   # metres
+BOARD_M = (.25, .28)             # full board, metres
+BOARD_LABEL = '×'.join(f'{x*1000:g}' for x in BOARD_M)
 LOGGER = get_logger("calibration")
 
 
@@ -68,16 +71,17 @@ def right_plane(image, K, dist):
         return None
 
     R = cv2.Rodrigues(rvec)[0]
-    center = R @ np.array([.09, .105, 0]) + tvec.ravel()
+    nx, ny = PATTERN
+    center = R @ np.array([(nx-1)*SQUARE_M/2, (ny-1)*SQUARE_M/2, 0]) + tvec.ravel()
     normal = R[:, 2]
     if normal[2] > 0:
         normal = -normal
 
-    mx, my = (BOARD_M[0] - 8 * SQUARE_M) / 2, (BOARD_M[1] - 9 * SQUARE_M) / 2
+    mx, my = (BOARD_M[0] - (nx+1)*SQUARE_M) / 2, (BOARD_M[1] - (ny+1)*SQUARE_M) / 2
     board = np.float32([[-SQUARE_M - mx, -SQUARE_M - my, 0],
-                        [7 * SQUARE_M + mx, -SQUARE_M - my, 0],
-                        [7 * SQUARE_M + mx, 8 * SQUARE_M + my, 0],
-                        [-SQUARE_M - mx, 8 * SQUARE_M + my, 0]])
+                        [nx * SQUARE_M + mx, -SQUARE_M - my, 0],
+                        [nx * SQUARE_M + mx, ny * SQUARE_M + my, 0],
+                        [-SQUARE_M - mx, ny * SQUARE_M + my, 0]])
     region = cv2.projectPoints(board, rvec, tvec, K, dist)[0].reshape(-1, 2)
     projected = cv2.projectPoints(obj, rvec, tvec, K, dist)[0].reshape(-1, 2)
     rmse = float(np.sqrt(np.mean(np.sum((projected - grid.reshape(-1, 2)) ** 2, axis=1))))

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Workspace</class>
+ <widget class="QMainWindow" name="Workspace">
+  <property name="windowTitle"><string>Cam_align — 보정 및 정렬</string></property>
+  <property name="geometry"><rect><x>0</x><y>0</y><width>1200</width><height>980</height></rect></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="workspaceLayout">
+    <property name="leftMargin"><number>6</number></property><property name="rightMargin"><number>6</number></property>
+    <property name="topMargin"><number>6</number></property><property name="bottomMargin"><number>0</number></property>
+    <item><layout class="QHBoxLayout" name="modeLayout">
+     <item><widget class="QLabel" name="workflowLabel"><property name="text"><string>작업 환경</string></property></widget></item>
+     <item><widget class="QComboBox" name="workflowCombo">
+      <property name="toolTip"><string>처음 선택할 때만 환경을 불러옵니다. 폴더·RT·설정·선택 촬영쌍은 작업별로 유지합니다.</string></property>
+      <item><property name="text"><string>이미지 ↔ 이미지 | Depth → IR / Color</string></property></item>
+      <item><property name="text"><string>점군 ↔ 이미지 | NSL LiDAR → Color</string></property></item>
+     </widget></item>
+     <item><widget class="QLabel" name="workflowHint"><property name="text"><string>입력·보정값은 환경별로 분리</string></property></widget></item>
+     <item><spacer name="modeSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>0</height></size></property></spacer></item>
+    </layout></item>
+    <item><widget class="QScrollArea" name="workspaceScroll">
+     <property name="widgetResizable"><bool>true</bool></property>
+     <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+     <widget class="QStackedWidget" name="workspaceStack">
+     <widget class="QWidget" name="welcomePage"><layout class="QVBoxLayout" name="welcomeLayout">
+      <item><widget class="QLabel" name="welcomeLabel"><property name="text"><string>작업 환경을 불러옵니다.&#10;원본 촬영·RT·출력 파일은 그대로 보존합니다.</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+     </layout></widget>
+     </widget>
+    </widget></item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

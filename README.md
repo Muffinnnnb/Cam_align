@@ -15,16 +15,19 @@ Windows / Python 3.12에서 확인했습니다. 저장소 루트에서 실행합
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe nsl_color_gui.py
+.venv\Scripts\python.exe app.py
 ```
 
-RealSense Depth 정렬 창은 다음과 같이 실행합니다.
+한 창의 상단 **작업 환경**에서 `이미지 ↔ 이미지 | Depth → IR / Color` 또는 `점군 ↔ 이미지 | NSL LiDAR → Color`를 선택합니다. 처음 선택할 때만 해당 환경을 불러오며, 돌아오면 목록 선택·결과·표시 설정이 유지됩니다. 분석·계산·저장 중에는 전환과 종료를 막습니다. 작은 화면에서는 작업 영역을 스크롤할 수 있습니다.
+
+시작 환경을 직접 지정할 수도 있습니다.
 
 ```powershell
-.venv\Scripts\python.exe calibration_gui.py
+.venv\Scripts\python.exe app.py --mode images
+.venv\Scripts\python.exe app.py --mode pointcloud
 ```
 
-`@run_nsl.bat`와 `@run.bat`도 사용할 수 있습니다. 프로젝트의 `.venv`가 있으면 우선 사용하고, 없으면 로컬 `python`을 사용합니다. 단순 16-bit Depth 확인은 `python depth_viewer.py <depth_raw.png>`로 실행합니다.
+`@run.bat`는 마지막 작업 환경을 복원하고, `@run_nsl.bat`는 점군 환경으로 시작합니다. 기존 `calibration_gui.py` / `nsl_color_gui.py` 명령도 같은 통합 창으로 연결됩니다. 프로젝트의 `.venv`가 있으면 우선 사용하고, 없으면 로컬 `python`을 사용합니다. 단순 16-bit Depth 확인은 `python depth_viewer.py <depth_raw.png>`로 실행합니다.
 
 오프라인 분석에는 카메라 연결이 필요하지 않습니다. 연결 장비의 공장 보정값을 읽는 기능에는 RealSense 장치가 필요합니다. `opencv-python-headless` 대신 화면 출력이 가능한 `opencv-python`을 설치하세요.
 
@@ -58,10 +61,12 @@ PCD 원본 좌표와 WF 복원 좌표는 서로 다른 기하 모델이므로 RT
 
 | 위치 | 역할 |
 | --- | --- |
-| `calibration_gui.py`, `calibration_viewer.ui` | RealSense 정렬 화면 |
+| `app.py`, `workspace.ui` | 공통 실행·작업 환경 선택·안전한 전환/종료 |
+| `calibration_gui.py`, `calibration_viewer.ui` | Depth → IR/Color 작업 화면 |
 | `nsl_color_gui.py`, `nsl_color_viewer.ui` | NSL–Color 보정·융합 화면 |
 | `calibrate_d_to_r.py`, `realsense_compare.py` | Depth 보정·정렬·SDK 비교 |
 | `nsl_color_calibration.py`, `nsl_plane_fit.py`, `nsl_geometry.py` | NSL 평면 검출·RT·광선 모델 |
+| `nsl_surface_support.py` | 거리·평면 잔차·3D 이웃·경계 확장 후보를 한 곳에 통합 |
 | `fuse_color_pointcloud.py` | 입력 대응, 색상 투영, 명령행 융합 |
 | `tests/unit/` | 합성 데이터·격리 설정을 쓰는 회귀 테스트 |
 | `tests/integration/` | 특정 로컬 촬영 자료가 필요한 GUI 검사 |
@@ -74,7 +79,13 @@ PCD 원본 좌표와 WF 복원 좌표는 서로 다른 기하 모델이므로 RT
 
 RGB PLY에는 투영 위치의 원본 Color 값을 저장합니다. CloudCompare에서 intensity나 거리 스칼라 대신 **Colors/RGB** 표시를 선택해야 합니다. 색이 저장됐다는 사실은 물리적 대응점이 정확하다는 뜻은 아닙니다.
 
+보드의 물리 정보는 `calibrate_d_to_r.py`의 `PATTERN`, `SQUARE_M`, `BOARD_M`에 한 번만 정의하며 NSL 치수·평면 검사도 이를 사용합니다. 픽셀 중심과 외곽 영역은 이 값에서 유도합니다. 검증된 기본값은 내부 꼭짓점 7×8, 한 칸 30 mm, 전체 250×280 mm입니다. 다른 보드를 지원한다고 검증한 것은 아니며, 보드를 바꾸면 재보정과 검증이 필요합니다. 제조사 WF 렌즈표·센서 해상도, RANSAC/LM 및 품질 임계값은 물리 모델/알고리즘 규칙이므로 이번 정리에서 변경하지 않았습니다.
+
+설정은 `workspace_settings.ini`(마지막 환경), `viewer_settings.ini`(Depth 입력/검출), `nsl_color_settings.ini`(NSL 입력/모델/표시)로 분리하며 Git에 올리지 않습니다. 기존 파일을 덮어쓰거나 다른 환경의 RT로 대체하지 않습니다. 이동된 내부 함수는 `nsl_local_support`, `nsl_metric_support`, `nsl_basin_support` 대신 `nsl_surface_support`에서 가져옵니다. 외부에서 이 내부 모듈을 직접 import했다면 경로를 바꿔야 합니다.
+
 ## 검증 범위와 남은 한계
+
+2026-10-26 구조 정리와 전후 동일성 검증은 [정리 검증 기록](docs/validation-workspace-cleanup.txt)을 참고하세요. 아래 수치는 초기 기준 버전의 역사적 관찰이며 최신 보드 대응률이 아닙니다. 현재 단계별 결과는 [기존 알고리즘 이력](docs/algorithm-evolution.html)에 누적 기록합니다.
 
 NSL 화면의 하늘색은 **평면 후보 있음**, 빨강은 **평면쌍 없음**, 회색은 **미검사**입니다. RT 학습 사용/제외 이력과 잔차는 별도 표시합니다. 주황색 표시가 없어졌다는 것은 판정 표시 정책의 변경이며, 탐지 성공률 100%를 뜻하지 않습니다.
 

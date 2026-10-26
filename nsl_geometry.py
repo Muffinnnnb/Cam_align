@@ -1,10 +1,11 @@
 """Explicit, reversible range-to-XYZ recovery; never edits captured PCD files."""
 from hashlib import sha256
 from pathlib import Path
+from app_paths import CAL_DIR
 
 import numpy as np
 
-TABLES = Path(__file__).resolve().parent / 'cal' / 'nsl'
+TABLES = CAL_DIR / 'nsl'
 GEOMETRY_MODES = ('pcd', 'wf_range')
 GEOMETRY_LABELS = ('PCD 원본 좌표 (기존 RT)', '원본 거리맵 → 제조사 WF 복원 (별도 RT)')
 

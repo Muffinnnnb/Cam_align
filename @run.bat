@@ -1,8 +1,8 @@
 @echo off
 cd /d "%~dp0"
 if exist ".venv\Scripts\python.exe" (
-    ".venv\Scripts\python.exe" calibration_gui.py
+    ".venv\Scripts\python.exe" app.py
 ) else (
-    python calibration_gui.py
+    python app.py
 )
 if errorlevel 1 pause

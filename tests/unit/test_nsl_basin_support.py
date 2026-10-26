@@ -4,7 +4,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 import nsl_color_calibration as nc
-from nsl_basin_support import basin_support, bounded_surface
+from nsl_surface_support import basin_support, bounded_surface
 from nsl_plane_fit import complete_support, support_quality
 import test_nsl_surface_support as fixtures
 
@@ -47,7 +47,7 @@ class BasinSupportTests(unittest.TestCase):
     def test_complete_objects_and_empty_data_do_not_need_expansion(self):
         grid, board = fixtures.SurfaceSupportTests.board()
         planes = complete_support(grid, [dict(mask=board)], nc.plane_quality)
-        with patch('nsl_basin_support.watershed_ift') as watershed:
+        with patch('nsl_surface_support.watershed_ift') as watershed:
             self.assertEqual(basin_support(grid, planes, nc.plane_quality), [])
             self.assertEqual(basin_support(np.full_like(grid, np.nan), [], nc.plane_quality), [])
             watershed.assert_not_called()
@@ -57,7 +57,7 @@ class BasinSupportTests(unittest.TestCase):
         planes = self.partial(grid, board)
         # A basin reaching its artificial outer search fence is NOT a measured
         # object boundary, even if a rectangular final hull would fit a plane.
-        with patch('nsl_basin_support.watershed_ift', side_effect=lambda cost, markers: np.where(markers == 2, 2, 1)):
+        with patch('nsl_surface_support.watershed_ift', side_effect=lambda cost, markers: np.where(markers == 2, 2, 1)):
             self.assertEqual(basin_support(grid, planes, nc.plane_quality), [])
 
     def test_image_border_is_not_a_physical_object_boundary(self):
@@ -66,7 +66,7 @@ class BasinSupportTests(unittest.TestCase):
         # A wall basin can avoid the search fence yet end at the camera border.
         labels = np.full(board.shape, 2, 'int32')
         labels[20:100, :45] = 1
-        with patch('nsl_basin_support.watershed_ift', return_value=labels):
+        with patch('nsl_surface_support.watershed_ift', return_value=labels):
             self.assertEqual(basin_support(grid, planes, nc.plane_quality), [])
 
     def test_patch_of_continuous_wall_is_not_a_bounded_board(self):

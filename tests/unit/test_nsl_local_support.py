@@ -3,7 +3,7 @@ import unittest
 import cv2
 import numpy as np
 import nsl_color_calibration as nc
-from nsl_local_support import local_hypotheses, local_support, unrepresented_support
+from nsl_surface_support import local_hypotheses, local_support, unrepresented_support
 from nsl_plane_fit import complete_support, support_quality
 from nsl_surface_support import plane_conditioned_support
 import test_nsl_surface_support as fixtures

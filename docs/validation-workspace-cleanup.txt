@@ -1,0 +1,74 @@
+Workspace / source cleanup — 2026-10-26 (Asia/Seoul)
+Baseline: 0244ad3. This is structural maintenance, NOT improved accuracy.
+
+Changes
+- app.py + editable workspace.ui: one selector for Depth -> IR/Color and
+  NSL point cloud -> Color. Lazy creation, retained controller/state per mode.
+- @run.bat restores the last mode; @run_nsl.bat selects pointcloud. Existing
+  calibration_gui.py and nsl_color_gui.py entrypoints forward to the same shell.
+- Analysis/calibration/save blocks workflow changes and window close. A closed
+  window cannot start analysis through a delayed startup callback.
+- Existing workflow settings/RTs stay separate; Depth input folders now persist.
+- Short screens use a scrollable work area rather than hiding controls.
+- Four support-proposal modules consolidated in nsl_surface_support.py:
+  range, paired, plane-conditioned, metric, local and bounded-basin proposals.
+  Three former implementation files removed; functions are retained. Git retains
+  their complete history. Production root .py files: 20 -> 18 (including app.py).
+- Board dimensions/square/pattern share calibrate_d_to_r constants. Camera-space
+  board center/outer corners are derived from them; duplicated sizes removed.
+- Shared calibration root in app_paths.CAL_DIR. No production Python/UI contains
+  a user-specific absolute path or capture timestamp.
+- Removed dead commented-out save implementation and unused imports. NSL target
+  labels say Color instead of assuming the separate RGB camera is RealSense.
+- No change to RANSAC/LM, thresholds, manufacturer lens model or association
+  criteria. Physical specifications are not arbitrary magic numbers to remove.
+
+Validation
+- PASS: 110 unit tests, 10.030 s, local Python 3.12.
+- PASS: 76/76 NSL raw-analysis results (all candidate/eligibility fields) and
+  all projected XYZ/RGB/intensity/UV/statistics/indices match baseline hashes.
+  Both baseline and post-refactor were analyzed from input, without cache hits.
+  Matched state remains 76/76; partials are not counted as matched.
+- PASS: four Depth/IR analysis results match baseline hashes exactly.
+- PASS: real Qt workflow/close/save test and CLI --help.
+- PASS: appended HTML, 11 existing animation stages, 1280/375/320 px, no script
+  errors or horizontal overflow. Prior explanation sections preserved.
+- New Qt tests: lazy construction, instance/result retention, settings restore,
+  creation failure recovery, busy switch/close guards, legacy entry forwarding,
+  reload-error cleanup and close-before-startup cancellation.
+- Real Qt test uses two Depth/IR pairs and one NSL/Color pair with existing RTs.
+  Both panels, repeated switching and Color cross overlay were visually checked.
+- Real offline rs.align() runs inside ComparisonSaveWorker; three PLYs, PNGs and
+  JSONs saved. Busy switching is blocked until the thread is fully finished.
+- RGB PLY payload compared with project_to_color XYZ (float32) and RGB arrays.
+  Active RT files and original settings byte hashes unchanged. Camera hardware
+  was NOT opened, and no new factory calibration was acquired.
+- Initial parity harness erroneously hashed process-local Python id() values
+  in a projection-cache key. Fixed the HARNESS, not the algorithms or thresholds.
+  The baseline raw-analysis and projection hashes remain unchanged. v1 reference
+  comparison checks all raw candidate fields and all projected outputs, plus
+  per-frame matched state; v2 references additionally compare association fields
+  before constructing the process-local projection cache.
+
+Reproduce
+  python -m unittest discover -s tests/unit -q
+  set CAM_ALIGN_CAPTURE_ROOT=<local capture root>
+  python tests/integration/workspace_ui_smoke.py
+  python tests/integration/cleanup_parity.py --capture-root <capture root>
+    --reference output/validation/cleanup_20261026/before.json
+  # Record baseline BEFORE code changes; after changes run the same command
+  # with --compare. Specific local v10 WF RT and cal/c are required by this audit.
+
+Limitations / preservation
+- Board remains the verified 7x8 inner-corner, 30 mm square, 250x280 mm target.
+  This consolidation does not establish support for arbitrary boards/cameras.
+- Full RT optimization was not rerun; source/training observations and current
+  RT projection are compared. No claim of new physical alignment accuracy.
+- Existing controller APIs and CLIs are retained. External scripts importing
+  the three removed internal modules must import nsl_surface_support instead.
+- No captured images, raw point clouds, active RTs or existing outputs deleted.
+  Superseded module contents preserved in local 휴지통/cleanup_20261026/ with
+  original_paths.json; also recoverable through Git history. To undo the code
+  refactor, revert the commit as a whole, not only the three old filenames.
+- Unrelated pre-existing README edits, draft HTML and local research notes/ZIP
+  were preserved and are not included in this change's commit.

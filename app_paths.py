@@ -2,6 +2,7 @@
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
+CAL_DIR = APP_DIR / "cal"
 OUTPUT_DIR = APP_DIR / "output"
 
 

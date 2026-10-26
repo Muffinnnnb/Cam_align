@@ -1,5 +1,4 @@
 import json
-import sys
 from pathlib import Path
 
 import cv2
@@ -10,11 +9,11 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFileDialog
 
 from app_paths import APP_DIR, calibration_input, output_dir
-from app_logging import LOG_PATH, get_logger, install_exception_hook, start_hang_watchdog, stop_hang_watchdog
+from app_logging import LOG_PATH, get_logger, start_hang_watchdog, stop_hang_watchdog
 from calibrate_d_to_r import (DEFAULT_DEPTH_DIR, DEFAULT_TARGET_DIR, RESULT_PATH,
                               align_depth_to_right, analyze_frame, calibrate,
                               save_ir_point_cloud, save_point_cloud, timestamps)
-from realsense_compare import (close_rs_align_sessions, comparison_metrics, rs_align_depth,
+from realsense_compare import (comparison_metrics, rs_align_depth,
                                save_comparison, save_factory_calibration)
 
 
@@ -108,15 +107,17 @@ class ComparisonSaveWorker(QObject):
 
 
 class Controller(QObject):
-    def __init__(self):
+    def __init__(self, settings_path=None):
         super().__init__()
         self.window = QUiLoader().load(str(APP_DIR / "calibration_viewer.ui"))
         self.images = {}
         self.frames = {}
         self.result = None
         self.factory_result = None
-        self.settings = QSettings(str(APP_DIR / "viewer_settings.ini"), QSettings.IniFormat)
-        self.depth_dir, self.target_dir = DEFAULT_DEPTH_DIR, DEFAULT_TARGET_DIR
+        self.settings = QSettings(str(settings_path or APP_DIR / "viewer_settings.ini"), QSettings.IniFormat)
+        self.depth_dir = Path(self.settings.value('input/depth_dir', str(DEFAULT_DEPTH_DIR)))
+        self.target_dir = Path(self.settings.value('input/target_dir', str(DEFAULT_TARGET_DIR)))
+        self.loading = False
         self.result_path = RESULT_PATH
         self.aligned_depth = None
         self.rs_depth = None
@@ -140,8 +141,6 @@ class Controller(QObject):
         self.window.savePointCloudButton.clicked.connect(self.save_point_cloud)
         self.window.saveIrPointCloudButton.clicked.connect(self.save_ir_point_cloud)
         self.window.calibrateButton.clicked.connect(self.run_calibration)
-        # self.window.showAlignedDepthCheckBox.toggled.connect(self.refresh_view)
-        # self.window.compareRsCheckBox.toggled.connect(self.refresh_view)
         self.window.showAlignedDepthCheckBox.toggled.connect(
             self.show_aligned_toggled
         )
@@ -175,6 +174,11 @@ class Controller(QObject):
             LOGGER.exception("NSL PointCloud -> Color window open failed")
             self.window.statusbar.showMessage(f"NSL 융합 창 열기 실패: {error}")
 
+    def is_busy(self):
+        return self.loading or self.save_thread is not None or any(
+            not getattr(self.window, name).isEnabled() for name in
+            ('calibrateButton', 'savePointCloudButton', 'saveIrPointCloudButton'))
+
     def eventFilter(self, obj, event):
         try:
             if event.type() == QEvent.Resize and obj in self.images:
@@ -182,9 +186,8 @@ class Controller(QObject):
             elif event.type() == QEvent.MouseButtonPress and obj == self.window.rightImageLabel:
                 self.pick_depth(event.position())
                 return True
-            elif (event.type() == QEvent.Close and obj == self.window and
-                  self.save_thread is not None and self.save_thread.isRunning()):
-                self.window.statusbar.showMessage("비교 결과 저장이 끝난 후 종료할 수 있습니다.")
+            elif event.type() == QEvent.Close and obj == self.window and self.is_busy():
+                self.window.statusbar.showMessage("분석·계산·저장이 끝난 후 종료할 수 있습니다.")
                 event.ignore()
                 return True
             return super().eventFilter(obj, event)
@@ -234,8 +237,6 @@ class Controller(QObject):
             len(self.frames),
         )
 
-        # path = QFileDialog.getExistingDirectory(self.window, "Depth 폴더 선택" if depth else "정렬 대상 폴더 선택", str(current))
-
 
         start_hang_watchdog(20)
 
@@ -247,7 +248,6 @@ class Controller(QObject):
             )
         finally:
             stop_hang_watchdog()
-
 
 
         LOGGER.info(
@@ -282,6 +282,9 @@ class Controller(QObject):
         else:
             self.target_dir = folder
             self.window.targetFolderEdit.setText(path)
+        self.settings.setValue('input/depth_dir', str(self.depth_dir))
+        self.settings.setValue('input/target_dir', str(self.target_dir))
+        self.settings.sync()
         self.frames.clear()
 
         self.rs_depth = None
@@ -390,6 +393,19 @@ class Controller(QObject):
         label.setPixmap(QPixmap.fromImage(qimage).scaled(label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def reload(self):
+        if self.loading:
+            return
+        self.loading = True
+        try:
+            self._reload()
+        except Exception as error:
+            LOGGER.exception('Depth input reload failed')
+            self.window.statusbar.showMessage(f'입력 불러오기 실패: {error}')
+        finally:
+            self.window.fileList.blockSignals(False)
+            self.loading = False
+
+    def _reload(self):
         try:
             options = self.detection_options()
         except ValueError as error:
@@ -423,7 +439,6 @@ class Controller(QObject):
             else:
                 item.setToolTip("양쪽 검출 성공" + (" / Depth ROI 적용" if frame["depth_roi"] is not None else ""))
             self.window.statusbar.showMessage(f"검출 확인 중: {self.window.fileList.count()}개")
-            # QApplication.processEvents()
             QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
             
         self.window.fileList.blockSignals(False)
@@ -637,34 +652,6 @@ class Controller(QObject):
             QApplication.restoreOverrideCursor()
             self.window.savePointCloudButton.setEnabled(True)
 
-    # 260903 1248
-    # def save_ir_point_cloud(self):
-    #     item = self.window.fileList.currentItem()
-    #     calibration = self.active_calibration()
-    #     if item is None or calibration is None:
-    #         self.window.statusbar.showMessage("파일과 RT 결과가 필요합니다.")
-    #         return
-    #     stamp = item.text()
-    #     path, _ = QFileDialog.getSaveFileName(
-    #         self.window, "대상 영상 색상 포인트 클라우드 저장",
-    #         str(RESULT_PATH.with_name(f"target_{stamp}.ply")), "PLY point cloud (*.ply)")
-    #     if not path:
-    #         return
-    #     if not path.lower().endswith(".ply"):
-    #         path += ".ply"
-    #     self.window.saveIrPointCloudButton.setEnabled(False)
-    #     QApplication.setOverrideCursor(Qt.WaitCursor)
-    #     try:
-    #         frame = self.frames.get(stamp) or self.analyze(stamp)
-    #         points = save_ir_point_cloud(path, frame, calibration)
-    #         self.window.statusbar.showMessage(f"대상 영상 색상 {points:,} points 저장 완료 — {path}")
-    #     except Exception as error:
-    #         LOGGER.exception("Target point cloud save failed path=%s", path)
-    #         self.window.statusbar.showMessage(f"IR 포인트 클라우드 저장 실패: {error}")
-    #     finally:
-    #         QApplication.restoreOverrideCursor()
-    #         self.window.saveIrPointCloudButton.setEnabled(True)
-
     def save_ir_point_cloud(self):
         item = self.window.fileList.currentItem()
         calibration = self.active_calibration()
@@ -764,8 +751,6 @@ class Controller(QObject):
         finally:
             QApplication.restoreOverrideCursor()
             self.window.saveIrPointCloudButton.setEnabled(True)
-
-
 
 
     def save_alignment_comparison(self):
@@ -910,15 +895,8 @@ class Controller(QObject):
         self.refresh_view()
 
 def main():
-    install_exception_hook(LOGGER)
-    LOGGER.info("application start")
-    app = QApplication(sys.argv)
-    controller = Controller()
-    controller.window.show()
-    code = app.exec()
-    close_rs_align_sessions()
-    LOGGER.info("application exit code=%d", code)
-    sys.exit(code)
+    from app import main as launch
+    launch('images')
 
 
 if __name__ == "__main__":

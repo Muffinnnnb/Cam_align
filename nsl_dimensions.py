@@ -4,8 +4,9 @@ import numpy as np
 from scipy.optimize import least_squares
 
 from nsl_geometry import scale_ray_angles
+from calibrate_d_to_r import BOARD_M
 
-BOARD_SIZE = np.array([.25, .28])
+BOARD_SIZE = np.array(BOARD_M)
 
 
 def measured_size(points):

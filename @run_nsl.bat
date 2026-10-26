@@ -1,8 +1,8 @@
 @echo off
 cd /d "%~dp0"
 if exist ".venv\Scripts\python.exe" (
-    ".venv\Scripts\python.exe" nsl_color_gui.py
+    ".venv\Scripts\python.exe" app.py --mode pointcloud
 ) else (
-    python nsl_color_gui.py
+    python app.py --mode pointcloud
 )
 if errorlevel 1 pause

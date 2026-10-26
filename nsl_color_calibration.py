@@ -10,7 +10,7 @@ import numpy as np
 from app_logging import get_logger
 from app_paths import output_dir
 from calibrate_d_to_r import (
-    BOARD_M, camera, calibrate, right_plane,
+    BOARD_M, SQUARE_M, BOARD_LABEL, camera, calibrate, right_plane,
 )
 from fuse_color_pointcloud import (
     DEFAULT_CAPTURE_ROOT, DEFAULT_COLOR_CAL, capture_pairs, fuse_points,
@@ -19,17 +19,14 @@ from fuse_color_pointcloud import (
 from nsl_geometry import geometry_spec, check_geometry, source_geometry_warning, detected_lens, fusion_block_reason, corrected_points, ray_scale
 from hashlib import sha256
 from nsl_plane_fit import complete_support, fit_point_planes, support_quality, cell_means
-from nsl_surface_support import range_support, paired_support, plane_conditioned_support
-from nsl_metric_support import metric_support
-from nsl_local_support import local_support
-from nsl_basin_support import basin_support
+from nsl_surface_support import (range_support, paired_support, plane_conditioned_support,
+                                 metric_support, local_support, basin_support)
 from nsl_projection_fit import observation, outline_errors, refine_projection
 from nsl_dimensions import estimate_source_correction, measured_size
 from nsl_board_identity import identify_board, frame_fingerprint, IDENTITY_VERSION
 from nsl_overlay import point_overlay
 
 
-ROOT = Path(__file__).resolve().parent
 RESULT_PATH = output_dir("calibration") / "nsl_to_color_rt.json"
 LOGGER = get_logger("nsl_color")
 PLANE_CANDIDATE_RGB = (0, 255, 0)  # Visibility only, NOT an RT/ground-truth pass.
@@ -59,7 +56,7 @@ def plane_quality(points, normal):
     ratio = size / np.sort(BOARD_M)
     reasons = []
     if np.any(ratio < .70) or np.any(ratio > 1.30):
-        reasons.append(f"보드 지지폭 {size[0]*1000:.0f}×{size[1]*1000:.0f} mm (기대 250×280)")
+        reasons.append(f"보드 지지폭 {size[0]*1000:.0f}×{size[1]*1000:.0f} mm (기대 {BOARD_LABEL})")
     if rectangularity < .70:
         reasons.append(f"지지영역 불완전 {rectangularity:.0%}")
     if rmse > .006:
@@ -632,7 +629,7 @@ def calibrate_nsl_color(frames: dict, result_path=RESULT_PATH,
     current.update({
         'from': 'nsl_pointcloud', 'to': 'color', 'translation_unit': 'm',
         'source_type': 'NSL organized point cloud', 'target_type': 'RealSense color',
-        'square_size_m': .03, 'board_size_m': list(BOARD_M),
+        'square_size_m': SQUARE_M, 'board_size_m': list(BOARD_M),
         'source_geometry': geometry, 'calibration_version': 13,
         'capture_root': str(Path(capture_root).resolve()),
         'target_intrinsic_source': str(Path(color_cal)/'Intrinsic.txt'),

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 import nsl_color_calibration as nc
-from nsl_metric_support import metric_support
+from nsl_surface_support import metric_support
 from nsl_plane_fit import support_quality
 
 

@@ -18,12 +18,10 @@ def legacy_cell_means(points, bins=8):
 def legacy_reduction():
     import nsl_color_calibration as nc
     import nsl_plane_fit as fit
-    import nsl_local_support as local
-    import nsl_metric_support as metric
     import nsl_surface_support as surface
     import nsl_projection_fit as projection
     with ExitStack() as stack:
-        for module in (nc, fit, local, metric, surface, projection):
+        for module in (nc, fit, surface, projection):
             stack.enter_context(patch.object(module, 'cell_means', legacy_cell_means))
         yield
 

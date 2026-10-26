@@ -7,7 +7,7 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="mainLayout">
     <item><widget class="QLabel" name="titleLabel">
-     <property name="text"><string>NSL PointCloud → RealSense Color 평면 보정 / 융합</string></property>
+     <property name="text"><string>NSL PointCloud → Color 평면 보정 / 융합</string></property>
      <property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
      <property name="styleSheet"><string notr="true">font-size:18px;font-weight:bold;padding:6px;</string></property>
     </widget></item>
@@ -71,7 +71,7 @@
            </widget></item></layout>
           </widget></item>
           <item><widget class="QGroupBox" name="targetGroup">
-           <property name="title"><string>RealSense Color 체스보드 평면</string></property>
+           <property name="title"><string>Color 체스보드 평면</string></property>
            <layout class="QVBoxLayout" name="targetLayout"><item><widget class="QLabel" name="targetImageLabel">
             <property name="minimumSize"><size><width>360</width><height>270</height></size></property>
             <property name="styleSheet"><string notr="true">background:#111;color:#aaa;border:1px solid #555;</string></property>

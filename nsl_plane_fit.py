@@ -4,6 +4,7 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.ndimage import distance_transform_edt
 from itertools import combinations
+from calibrate_d_to_r import BOARD_M, BOARD_LABEL
 
 
 def quadrilateral_support(hull):
@@ -130,7 +131,7 @@ def complete_support(grid, seeds, quality_function):
             reasons.append(f'거리 경계 지지 {edge_support:.0%} < 55% (보드 일부/다른 물체 가능)')
         image_rect = cv2.minAreaRect(hull)
         rectangularity = cv2.contourArea(hull)/max(1, np.prod(image_rect[1]))
-        score = (np.linalg.norm((np.array(quality['size'])-[.25,.28])/[.25,.28])
+        score = (np.linalg.norm((np.array(quality['size'])-BOARD_M)/BOARD_M)
                  + full_rmse/.030 + 2*(1-rectangularity) + 2*(1-edge_support))
         found.append({**quality, 'normal': normal, 'h': h, 'center': center,
                       'board_center': board_center, 'mask': mask, 'support_mask': support,
@@ -162,10 +163,10 @@ def support_quality(points, plane):
     """
     values = np.linalg.eigvalsh(np.cov(points.T))
     flatness = float(np.sqrt(max(0, values[0]) / max(values[1], 1e-12)))
-    ratio = np.sort(plane['size']) / [.25, .28]
+    ratio = np.sort(plane['size']) / BOARD_M
     reasons = []
     if len(points) < 100 or np.any(ratio < .70) or np.any(ratio > 1.40):
-        reasons.append('보드 크기/실측 지지점 부족 (250×280 mm의 70~140%)')
+        reasons.append(f'보드 크기/실측 지지점 부족 ({BOARD_LABEL} mm의 70~140%)')
     if flatness > .20:
         reasons.append(f'평면 두께/접선 분산 비 {flatness:.2f} > 0.20')
     if plane.get('rectangularity', 0) < .70 or plane.get('support_occupancy', 0) < .75:

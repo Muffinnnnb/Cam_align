@@ -3,9 +3,10 @@ import json
 from pathlib import Path
 
 import cv2
+from app_paths import CAL_DIR
 
 
-DEFAULT_DIR = Path(__file__).parent / "cal" / "d"
+DEFAULT_DIR = CAL_DIR / "d"
 
 
 def main():

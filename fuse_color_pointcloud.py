@@ -9,13 +9,13 @@ import cv2
 import numpy as np
 
 from app_logging import get_logger, install_exception_hook
-from app_paths import OUTPUT_DIR
+from app_paths import APP_DIR, CAL_DIR, OUTPUT_DIR
 from nsl_geometry import geometry_spec, range_to_xyz, rt_geometry, detected_lens, fusion_block_reason, ray_scale, scale_ray_angles
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = APP_DIR
 DEFAULT_CAPTURE_ROOT = Path(os.environ.get("CAM_ALIGN_CAPTURE_ROOT", str(ROOT / "captures")))
-DEFAULT_COLOR_CAL = ROOT / "cal" / "c"
+DEFAULT_COLOR_CAL = CAL_DIR / "c"
 LOGGER = get_logger("fusion")
 
 
